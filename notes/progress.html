@@ -3,77 +3,84 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>AutoDS Loop — Implementation Progress</title>
+<title>Directional Research Memory — Progress Snapshot</title>
 <style>
-  body { font: 15px/1.55 -apple-system, Segoe UI, Roboto, sans-serif; margin: 2rem auto; max-width: 880px; color: #1c2230; padding: 0 1rem; }
-  h1 { font-size: 1.5rem; } h2 { font-size: 1.15rem; margin-top: 1.8rem; border-bottom: 1px solid #e3e7ee; padding-bottom: .3rem; }
-  code { background: #f3f5f9; padding: .1rem .35rem; border-radius: 4px; }
-  table { border-collapse: collapse; width: 100%; margin: .6rem 0; }
-  th, td { text-align: left; padding: .4rem .6rem; border-bottom: 1px solid #e8ebf1; font-size: .92rem; }
-  .done { color: #137a37; font-weight: 600; }
-  .note { background: #fff8e6; border: 1px solid #f0e0a8; padding: .7rem 1rem; border-radius: 6px; }
-  ul { padding-left: 1.2rem; }
+  body { font: 15px/1.6 -apple-system, Segoe UI, Roboto, sans-serif; margin: 2rem auto; max-width: 880px; color: #d4dce8; background: #1a1e2e; padding: 0 1.5rem; }
+  h1 { font-size: 1.55rem; color: #e8edf7; letter-spacing: -.01em; }
+  h2 { font-size: 1.1rem; margin-top: 2rem; border-bottom: 1px solid #2e3550; padding-bottom: .35rem; color: #7ec8a0; text-transform: uppercase; letter-spacing: .06em; }
+  a { color: #79b8ff; }
+  code { background: #252b3b; color: #a8d8ff; padding: .1rem .4rem; border-radius: 4px; font-size: .9em; }
+  table { border-collapse: collapse; width: 100%; margin: .8rem 0; border-radius: 6px; overflow: hidden; }
+  th { background: #252b3b; color: #b0c4de; font-weight: 600; font-size: .85rem; text-transform: uppercase; letter-spacing: .05em; }
+  th, td { text-align: left; padding: .5rem .75rem; border-bottom: 1px solid #2e3550; font-size: .92rem; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: #1f2437; }
+  .done { color: #6ee7a0; font-weight: 700; }
+  .active { color: #79b8ff; font-weight: 700; }
+  .pending { color: #b0c4de; }
+  .note { background: #1f2840; border: 1px solid #3a4a6b; color: #b8c8e0; padding: .8rem 1.1rem; border-radius: 8px; margin-top: 1.2rem; line-height: 1.6; }
+  ul { padding-left: 1.3rem; }
+  li { margin-bottom: .35rem; }
 </style>
 </head>
 <body>
-<h1>LLM Autonomous Data Scientist (Toy) — Implementation Progress</h1>
-<p>Branch <code>001-autods-loop</code>. All 33 tasks (T001–T033) implemented; the offline
-test suite (20 tests) passes.</p>
+<h1>Directional Research Memory — Progress Snapshot</h1>
+<p>Snapshot taken <code>2026-06-13</code> on a break. Active branch
+<code>004-benchmark-harness</code>. Thesis target: <em>Directional Research Memory for
+Autonomous Data-Scientist Agents — Compaction as Momentum in Experiment Space</em>.</p>
 
-<h2>Phase status</h2>
+<h2>Roadmap status</h2>
 <table>
-  <tr><th>Phase</th><th>Tasks</th><th>Status</th></tr>
-  <tr><td>1 · Setup</td><td>T001–T004</td><td class="done">complete</td></tr>
-  <tr><td>2 · Foundational</td><td>T005–T007</td><td class="done">complete</td></tr>
-  <tr><td>3 · US1 Seed bootstrap</td><td>T008–T011</td><td class="done">complete</td></tr>
-  <tr><td>4 · US2 Local expansion</td><td>T012–T014</td><td class="done">complete</td></tr>
-  <tr><td>5 · US3 Train / score / track</td><td>T015–T021</td><td class="done">complete</td></tr>
-  <tr><td>6 · US4 Next-step decision</td><td>T022–T025</td><td class="done">complete</td></tr>
-  <tr><td>7 · US5 Full loop</td><td>T026–T030</td><td class="done">complete</td></tr>
-  <tr><td>8 · Polish</td><td>T031–T033</td><td class="done">complete</td></tr>
+  <tr><th>Feature</th><th>Scope</th><th>Status</th></tr>
+  <tr><td>001 · AutoDS Loop</td><td>Baseline inner loop, 2-schema LLM contract, allowlist</td><td class="done">done</td></tr>
+  <tr><td>002 · Live + Containerize</td><td>Gemini/Vertex via minimal ADK agent; container takes config at run time</td><td class="done">done</td></tr>
+  <tr><td>003 · Memory-Compaction Ablation</td><td>First A/B/C ablation with Postgres provenance</td><td class="done">done</td></tr>
+  <tr><td>004 · Benchmark Harness &amp; Suite</td><td>Versioned multi-dataset suite, frozen splits/budgets/action-space</td><td class="active">spec drafted</td></tr>
+  <tr><td>005 · Memory-Regime Abstraction</td><td>One interface behind 3 regimes; exact-memory-shown provenance</td><td class="pending">planned</td></tr>
+  <tr><td>006 · Compaction Operator</td><td>Typed belief-schema artifact; outer compaction loop</td><td class="pending">planned</td></tr>
+  <tr><td>007 · A/B/C Study</td><td>Multi-dataset, multi-seed pre-registered run</td><td class="pending">planned</td></tr>
+  <tr><td>008–010 · Analysis / Theory / Whitepaper</td><td>Phase transition, momentum theory, thesis assembly</td><td class="pending">planned</td></tr>
 </table>
 
-<h2>What was built</h2>
+<h2>Where we are on 004</h2>
 <ul>
-  <li><code>prompts.py</code> — Pydantic entities, the single <code>pydantic-settings</code>
-    Settings object, both LLM JSON schemas, and prompt text (the centralized config home).</li>
-  <li><code>llm.py</code> — async OpenAI-compatible client + generic schema-constrained,
-    Pydantic-validated request helper; the two sanctioned calls (seed, next-step).</li>
-  <li><code>data_gen.py</code> — seed bootstrap with checkpoint resume; local dataset
-    expansion anchored to the saved spec (no LLM, no spec regeneration).</li>
-  <li><code>train.py</code> — model allowlist, hyperparameter + decision validation
-    (the safety boundary), one-hot pipeline, 5-fold CV scoring (RMSE/R²/MAE).</li>
-  <li><code>history.py</code> — append-only run history, best-run tracking (RMSE-only
-    improvement), rejection recording that retains the prior model.</li>
-  <li><code>main.py</code> — CLI + orchestration: seed → expand → score → next-step →
-    record; baseline LinearRegression first; stop at N or after <em>patience</em> rounds.</li>
-  <li><code>tests/</code> — 20 offline pytest units across data-gen, train, history, loop.</li>
+  <li><code>specs/004-benchmark-harness/spec.md</code> — <strong>Draft</strong> complete:
+    a versioned suite of tabular datasets (regression <em>and</em> classification), each with a
+    frozen train/val/test split, a pre-registered primary metric + direction, a fixed experiment
+    budget, a frozen action space, and a task-appropriate model allowlist.</li>
+  <li>Provenance is mixed: <strong>anchored-synthetic</strong> members (deterministic Python
+    expansion from a saved <code>data_spec</code>, no LLM) and a few <strong>curated real
+    public</strong> tabular datasets for external validity. The seed delivery-time task becomes
+    one member, not the whole project.</li>
+  <li>Frozen split rows are materialized and persisted in <strong>Postgres</strong> (Alembic-managed)
+    and exportable to JSON/CSV, so splits are byte-identical across every regime and seed.</li>
+  <li>Scope is deliberately the <strong>data + harness layer only</strong> — no memory regimes (005),
+    no compaction operator (006), no ablation study (007).</li>
+  <li><code>checklists/requirements.md</code> — all quality gates pass; no
+    <code>[NEEDS CLARIFICATION]</code> markers remain.</li>
 </ul>
 
-<h2>Key decisions</h2>
+<h2>Also done this session</h2>
 <ul>
-  <li>Flat repo-root layout (replaced the generated <code>src/</code> package) and
-    <code>requires-python &gt;= 3.11</code>, per the plan and Constitution Principle I.</li>
-  <li>Settings + all Pydantic models live in <code>prompts.py</code> — honours the fixed
-    module list, avoids an unsanctioned <code>config.py</code> (open item C1).</li>
-  <li>Hyperparameter values are checked via scikit-learn's <code>_validate_params()</code>
-    so invalid values are rejected <em>before</em> training (1.9 validates at fit time).</li>
-  <li>Rejections carry the retained model's metrics (no <code>Infinity</code> in JSON),
-    keeping <code>history.json</code> standard and inspectable.</li>
+  <li>Constitution amended to <strong>v5.3.0</strong> (commit <code>0f37893</code>): Principle VII now
+    requires every generated HTML report to use the canonical dark color scheme of this file, with
+    the exact palette recorded inline. <em>This snapshot follows that scheme.</em></li>
+  <li>GitNexus index refreshed (<code>1,252 nodes | 1,715 edges | 40 clusters | 36 flows</code>).</li>
 </ul>
 
-<h2>Verification</h2>
+<h2>Next step on resume</h2>
 <ul>
-  <li><code>uv run pytest</code> → 20 passed.</li>
-  <li>Full loop exercised end-to-end offline with a stubbed LLM: seed bootstrap, expansion,
-    LinearRegression baseline → RandomForest switch, an out-of-allowlist proposal rejected
-    (prior model retained), best-run tracking, and the run summary — covering the logic
-    behind SC-001…SC-007.</li>
+  <li>Run <code>/speckit-plan</code> on 004 to produce the implementation plan and design artifacts,
+    then <code>/speckit-tasks</code> to generate the dependency-ordered task list.</li>
+  <li>004 unblocks everything downstream — no fair memory comparison exists without fixed
+    datasets, splits, and budgets.</li>
 </ul>
 
-<p class="note"><strong>Live run pending credentials.</strong> A real
-<code>uv run python main.py</code> makes one live seed-generation LLM call and needs
-<code>LLM_API_KEY</code> + <code>LLM_MODEL</code> in <code>.env</code> (see
-<code>.env.example</code>). That live call was not executed here.</p>
+<p class="note"><strong>Uncommitted at break.</strong> The working tree holds the new
+<code>specs/004-benchmark-harness/</code> (untracked) plus modified
+<code>.specify/feature.json</code> (now points at 004), <code>AGENTS.md</code>,
+<code>CLAUDE.md</code> (GitNexus auto-update), <code>.devcontainer/devcontainer.json</code>, and
+this <code>notes/progress.html</code>. The constitution amendment is already committed; the 004
+spec and these companion changes are not yet committed.</p>
 </body>
 </html>
