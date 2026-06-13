@@ -1,7 +1,7 @@
 <!-- SPECKIT START -->
 For additional context about technologies to be used, project structure,
 shell commands, and other important information, read the current plan at
-`specs/005-memory-regime-abstraction/plan.md`
+`specs/006-compaction-operator/plan.md`
 <!-- SPECKIT END -->
 
 <!-- gitnexus:start -->
