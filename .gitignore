@@ -15,6 +15,7 @@ build/
 state/*.json
 state/*.csv
 outputs/*.txt
+entrypoint/runs/
 
 # Tooling / OS
 .pytest_cache/
