@@ -1,0 +1,68 @@
+# Spins up the AutoDS agent-loop backend (built from ./Dockerfile) together with a
+# Postgres instance.
+#
+#   docker compose up --build
+#
+# NOTES
+#   * The backend is a finite batch job: it runs a fixed N-iteration loop, writes its
+#     results, and exits 0. `docker compose up` will therefore show it complete and stop
+#     while `db` keeps running. That is expected — re-run with `docker compose run --rm
+#     backend` for ad-hoc runs.
+#   * Auth uses Application Default Credentials (ADC), NOT an API key. The host ADC file
+#     is mounted read-only (see the `volumes` on `backend`). Authenticate once on the host:
+#         gcloud auth application-default login
+#   * The app does not yet read from Postgres — DATABASE_URL is wired in ahead of the
+#     memory-compaction persistence work so no compose change is needed when it lands.
+#   * Postgres credentials / Vertex settings can be overridden via a local `.env` (compose
+#     interpolates it automatically); sensible defaults are baked in below so this runs
+#     with zero extra setup beyond ADC.
+
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-autods}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-autods}
+      POSTGRES_DB: ${POSTGRES_DB:-autods}
+    ports:
+      # Exposed for local inspection (psql/GUI). Drop this block if you don't need it.
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      # `backend` waits on this before starting (see depends_on below).
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-autods} -d ${POSTGRES_DB:-autods}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ds-agent-loop
+    restart: "no"  # finite batch job — don't restart on clean exit
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      # --- Database (host is the `db` service name on the compose network) ---
+      DATABASE_URL: postgresql://${POSTGRES_USER:-autods}:${POSTGRES_PASSWORD:-autods}@db:5432/${POSTGRES_DB:-autods}
+      # --- Vertex AI / Gemini (see .env.example; real env vars override .env defaults) ---
+      GOOGLE_GENAI_USE_VERTEXAI: "TRUE"
+      GOOGLE_CLOUD_PROJECT: ${GOOGLE_CLOUD_PROJECT:-research-se-gen-ai}
+      GOOGLE_CLOUD_LOCATION: ${GOOGLE_CLOUD_LOCATION:-global}
+      # Point the SDK at the ADC file mounted below.
+      GOOGLE_APPLICATION_CREDENTIALS: /var/secrets/adc.json
+    volumes:
+      # Mount host ADC read-only so credentials are never baked into the image.
+      - ${GOOGLE_APPLICATION_CREDENTIALS:-${HOME}/.config/gcloud/application_default_credentials.json}:/var/secrets/adc.json:ro
+      # Persist run artifacts across container exits.
+      - ./state:/app/state
+      - ./outputs:/app/outputs
+      - ./entrypoint/runs:/app/entrypoint/runs
+
+volumes:
+  pgdata:
