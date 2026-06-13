@@ -25,12 +25,17 @@ from google.genai import types
 from pydantic import BaseModel, ValidationError
 
 from .prompts import (
+    ABLATION_NEXT_STEP_SYSTEM,
+    COMPACTION_SYSTEM,
     NEXT_STEP_SYSTEM,
     SEED_GENERATION_SYSTEM,
     SEED_GENERATION_USER,
+    DirectionalMemory,
     NextStepDecision,
     SeedGeneration,
     Settings,
+    ablation_next_step_user,
+    compaction_user,
     next_step_user,
 )
 
@@ -162,6 +167,54 @@ async def request_next_step(
         name="next_step",
         instruction=NEXT_STEP_SYSTEM,
         user=next_step_user(history_json, allowlist, best_summary),
+        output_schema=NextStepDecision,
+        output_key="next_step",
+    )
+
+
+async def request_compaction(
+    settings: Settings,
+    *,
+    source_records_json: str,
+    dataset_summary: str,
+    allowlist: list[str],
+) -> DirectionalMemory:
+    """The THIRD sanctioned structured call (Principle XII): compact the source trajectory
+    into a Directional Research Memory artifact. Reuses the same tool-less ADK posture; a
+    malformed/schema-invalid artifact raises ``LLMError`` (fail fast, FR-010)."""
+
+    return await _run_structured(
+        settings,
+        name="compaction",
+        instruction=COMPACTION_SYSTEM,
+        user=compaction_user(source_records_json, dataset_summary, allowlist),
+        output_schema=DirectionalMemory,
+        output_key="compaction",
+    )
+
+
+async def request_next_step_ablation(
+    settings: Settings,
+    *,
+    memory_text: str,
+    allowlist: list[str],
+    best_summary: str,
+    dataset_summary: str,
+    metric: str,
+    goal_word: str,
+) -> NextStepDecision:
+    """Next-step call for the ablation: the agent sees the regime-specific ``memory_text``
+    and the dataset summary, and returns the same constrained decision schema (Principle II,
+    Principle XIII — only the memory differs across regimes)."""
+
+    return await _run_structured(
+        settings,
+        name="next_step",
+        instruction=ABLATION_NEXT_STEP_SYSTEM,
+        user=ablation_next_step_user(
+            memory_text, allowlist, best_summary,
+            dataset_summary=dataset_summary, metric=metric, goal_word=goal_word,
+        ),
         output_schema=NextStepDecision,
         output_key="next_step",
     )

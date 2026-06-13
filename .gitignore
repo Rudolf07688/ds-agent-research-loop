@@ -91,7 +91,8 @@ __pypackages__/
 # Generated experiment state & outputs (runtime artifacts)
 state/*.json
 state/*.csv
-outputs/*.txt
+state/splits/
+outputs/
 entrypoint/runs/
 
 # Tooling / OS
@@ -100,3 +101,6 @@ entrypoint/runs/
 *.swp
 .idea/
 .vscode/
+
+# Personal, machine-local Claude Code permission grants (never commit)
+.claude/settings.local.json

@@ -1,9 +1,10 @@
-"""Pydantic-settings config for the entrypoint runner.
+"""Pydantic-settings config for the entrypoint sweep runner.
 
-Extends the library's central ``Settings`` (from ``prompts``) with run-launcher details:
-the iteration count is fixed to 5 for this entrypoint and the per-run output location is
-configurable. Values still load from ``.env`` / environment, so credentials and overrides
-live in one place.
+Extends the library's central ``Settings`` (from ``prompts``) with container-run defaults.
+The container batch job runs the ablation SWEEP (see ``run.py``); these defaults keep a
+``docker compose up`` validation run small and feasible (a couple of seeds, a short budget)
+while a real research sweep overrides them via ``.env`` / environment. Values still load
+from ``.env`` / environment, so credentials and overrides live in one place.
 """
 
 from __future__ import annotations
@@ -16,18 +17,17 @@ from ds_agent_loop import Settings
 
 
 class RunConfig(Settings):
-    """Configuration for an end-to-end entrypoint run."""
+    """Configuration for the container ablation sweep."""
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
-    # This entrypoint runs a fixed 5-iteration end-to-end loop.
-    n_iterations: int = 5
+    # Container default: a short budget (override via env for a full study). ``seeds`` /
+    # ``datasets`` / ``regimes`` are inherited from ``Settings`` (with their NoDecode +
+    # comma-split env handling) so e.g. ``SEEDS=0`` and ``DATASETS=delivery_time`` parse.
+    n_iterations: int = 8
 
-    # Where per-run output directories are created.
+    # Where per-run artifact directories are created (kept for compatibility).
     runs_dir: Path = Path("entrypoint/runs")
-
-    # Keep each run self-contained: its own state lives under the run directory.
-    isolate_state: bool = True
 
 
 def load_config() -> RunConfig:

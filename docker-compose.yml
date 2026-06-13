@@ -4,15 +4,18 @@
 #   docker compose up --build
 #
 # NOTES
-#   * The backend is a finite batch job: it runs a fixed N-iteration loop, writes its
-#     results, and exits 0. `docker compose up` will therefore show it complete and stop
-#     while `db` keeps running. That is expected — re-run with `docker compose run --rm
-#     backend` for ad-hoc runs.
+#   * The backend is a finite batch job: it runs the memory-regime ablation SWEEP
+#     (every dataset × regime × seed cell to budget), persists everything to Postgres,
+#     writes its results, and exits 0. `docker compose up` will therefore show it complete
+#     and stop while `db` keeps running. That is expected — re-run with
+#     `docker compose run --rm backend` for ad-hoc runs. Interrupted sweeps RESUME:
+#     completed cells are not recomputed (SC-007).
 #   * Auth uses Application Default Credentials (ADC), NOT an API key. The host ADC file
 #     is mounted read-only (see the `volumes` on `backend`). Authenticate once on the host:
 #         gcloud auth application-default login
-#   * The app does not yet read from Postgres — DATABASE_URL is wired in ahead of the
-#     memory-compaction persistence work so no compose change is needed when it lands.
+#   * The backend reads and writes Postgres via DATABASE_URL (cells, experiment records,
+#     memory views, compaction artifacts, structured run_logs); it waits for a healthy `db`
+#     (depends_on below). Contents stay exportable to JSON/CSV (Principle IV / FR-014a).
 #   * Postgres credentials / Vertex settings can be overridden via a local `.env` (compose
 #     interpolates it automatically); sensible defaults are baked in below so this runs
 #     with zero extra setup beyond ADC.
@@ -50,6 +53,13 @@ services:
     environment:
       # --- Database (host is the `db` service name on the compose network) ---
       DATABASE_URL: postgresql://${POSTGRES_USER:-autods}:${POSTGRES_PASSWORD:-autods}@db:5432/${POSTGRES_DB:-autods}
+      # --- Sweep knobs (pass through from host env; sensible bounded defaults) ---
+      # Set STUB_LLM=1 to validate the plumbing offline (no Vertex calls).
+      STUB_LLM: ${STUB_LLM:-}
+      DATASETS: ${DATASETS:-}
+      REGIMES: ${REGIMES:-recent_only,all_raw,compacted_recent}
+      SEEDS: ${SEEDS:-0,1}
+      N_ITERATIONS: ${N_ITERATIONS:-8}
       # --- Vertex AI / Gemini (see .env.example; real env vars override .env defaults) ---
       GOOGLE_GENAI_USE_VERTEXAI: "TRUE"
       GOOGLE_CLOUD_PROJECT: ${GOOGLE_CLOUD_PROJECT:-research-se-gen-ai}

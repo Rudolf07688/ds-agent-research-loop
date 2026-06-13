@@ -1,10 +1,12 @@
-"""End-to-end entrypoint for the AutoDS loop.
+"""Container batch entrypoint: run the memory-regime ablation SWEEP to completion.
 
-Pulls the single library entrypoint (``run_loop``) and drives a fixed 5-iteration run,
-configured via ``config.py`` (pydantic-settings), writing the outcome to
-``entrypoint/runs/run_<current_dt>/results.text``.
+Brings up against Postgres (via ``DATABASE_URL``), runs every configured
+(dataset × regime × seed [× k × m]) cell to budget, exports the inspectable JSON/CSV, and
+exits with a status that is 0 only if every cell is terminal (Principle X).
 
-Run from the repository root:
+Set ``STUB_LLM=1`` to run with a deterministic in-process agent (NO network) — used to
+validate the full container plumbing (Postgres + sweep + logs + export + exit code) without
+Vertex credentials. Leave it unset for a real research sweep against Vertex/Gemini.
 
     uv run python entrypoint/run.py
 """
@@ -12,34 +14,69 @@ Run from the repository root:
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime
+import os
 from pathlib import Path
 
-from ds_agent_loop import run_loop  # the single library entrypoint
-from ds_agent_loop.main import SUMMARY_FILE
+from ds_agent_loop import store as store_mod
+from ds_agent_loop.experiment import run_sweep, sweep_exit_code
+from ds_agent_loop.prompts import DirectionalMemory, NextAction, NextStepDecision
 
 from config import load_config
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
+def _stub_enabled() -> bool:
+    return os.getenv("STUB_LLM", "").lower() in ("1", "true", "yes")
+
+
+async def _stub_propose(settings, *, memory_text, allowlist, best_summary, dataset_summary, metric, goal_word):
+    """Deterministic, offline next-step proposer: switch to the second allowlisted model."""
+
+    model = allowlist[1] if len(allowlist) > 1 else allowlist[0]
+    return NextStepDecision(action=NextAction.switch_model, model_name=model, hyperparameters={}, reason="stub")
+
+
+async def _stub_compactor(settings, *, source_records, descriptor):
+    """Deterministic, offline Directional Research Memory artifact."""
+
+    return DirectionalMemory(
+        confirmed_findings=[f"{len(source_records)} experiments compacted"],
+        failed_directions=[],
+        promising_directions=["keep exploring allowlisted models"],
+        best_known_configs=[],
+        unresolved_questions=[],
+        next_step_recommendation="continue",
+        confidence=0.5,
+        rationale="stub compaction",
+    ).model_dump(mode="json")
+
+
 def main() -> None:
     config = load_config()
+    engine = store_mod.make_engine(config.database_url)
+    store = store_mod.Store(engine)
 
-    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    run_dir = (REPO_ROOT / config.runs_dir / f"run_{timestamp}").resolve()
-    run_dir.mkdir(parents=True, exist_ok=True)
-    state_dir = run_dir / "state" if config.isolate_state else REPO_ROOT / "state"
+    stub = _stub_enabled()
+    propose = _stub_propose if stub else None
+    compactor = _stub_compactor if stub else None
+    mode = "STUB (offline)" if stub else "Vertex/Gemini"
+    print(f"Running ablation sweep [{mode}] -> Postgres at {config.database_url.split('@')[-1]}")
 
-    print(f"Running {config.n_iterations}-iteration loop -> {run_dir}")
-    asyncio.run(run_loop(config, state_dir=state_dir, outputs_dir=run_dir))
+    cells = asyncio.run(run_sweep(config, store=store, propose=propose, compactor=compactor))
 
-    # The library writes its summary as run_summary.txt; surface it as results.text.
-    summary_path = run_dir / SUMMARY_FILE
-    results_path = run_dir / "results.text"
-    if summary_path.exists():
-        summary_path.replace(results_path)
-    print(f"Results written to {results_path}")
+    out_dir = REPO_ROOT / "outputs" / "export"
+    store_mod.export(store, out_dir)
+    completed = sum(c.status.value == "completed" for c in cells)
+    failed = sum(c.status.value == "failed" for c in cells)
+    limited = sum(c.status.value == "context_limited" for c in cells)
+    code = sweep_exit_code(cells)
+    print(
+        f"Sweep done: {len(cells)} cells "
+        f"({completed} completed, {limited} context_limited, {failed} failed). "
+        f"Export -> {out_dir}. Exit {code}."
+    )
+    raise SystemExit(code)
 
 
 if __name__ == "__main__":

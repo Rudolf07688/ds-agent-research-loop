@@ -15,13 +15,27 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
-from . import data_gen, history, llm
-from .prompts import NextAction, NextStepDecision, RunRecord, Settings
+from . import benchmark, compaction, data_gen, history, llm, memory
+from . import store as store_mod
+from .prompts import (
+    CellStatus,
+    ExperimentCell,
+    ExperimentRecord,
+    MemoryRegime,
+    NextAction,
+    NextStepDecision,
+    RunRecord,
+    Settings,
+    TaskType,
+)
 from .train import (
+    BASELINE_BY_TASK,
     BASELINE_MODEL,
     MODEL_ALLOWLIST,
     ValidationRejected,
+    allowlist_for,
     score_model,
+    score_on_split,
     validate_decision,
 )
 
@@ -89,6 +103,255 @@ def should_stop(no_improvement_rounds: int, patience: int) -> bool:
     """Stop early after ``patience`` consecutive rounds without RMSE improvement."""
 
     return no_improvement_rounds >= patience
+
+
+# ===========================================================================
+# Feature 003: the parameterized cell runner (run_cell) — US1/US2
+# ===========================================================================
+#
+# ``run_cell`` runs ONE (dataset × regime × seed × k × m) cell to budget: at each iteration
+# it builds the regime-specific memory view (the sole manipulated variable, Principle XIII),
+# persists it BEFORE the decision, scores the chosen model on the FROZEN split, and records
+# a fully-provenanced ExperimentRecord. The agent call is injected (``propose``) so the loop
+# is testable offline; the default uses the real Vertex/Gemini call.
+
+
+def cell_id_for(dataset_id: str, regime: MemoryRegime, seed: int, k: int, m: int) -> str:
+    """Deterministic, idempotent cell key from the factor tuple (FR-014)."""
+
+    return f"{dataset_id}|{regime.value}|s{seed}|k{k}|m{m}"
+
+
+def _is_better(new: float, best: float | None, direction: int) -> bool:
+    """Direction-aware improvement test (+1 higher-is-better, -1 lower-is-better; FR-023)."""
+
+    if best is None:
+        return True
+    return new > best if direction > 0 else new < best
+
+
+def _apply_decision(
+    decision: NextStepDecision, prev_model: str, prev_hp: dict
+) -> tuple[str, dict]:
+    """Map a validated decision to the (model, hyperparameters) to run. The benchmark
+    dataset/split is fixed, so ``expand_dataset`` is a no-op that retains the model (the
+    action space stays identical across regimes, Principle XIII)."""
+
+    action = decision.action
+    if action is NextAction.tune_hyperparameters:
+        return prev_model, dict(decision.hyperparameters)
+    if action is NextAction.switch_model:
+        return decision.model_name, dict(decision.hyperparameters)
+    if action is NextAction.keep_model:
+        return decision.model_name or prev_model, dict(prev_hp)
+    # expand_dataset / stop are handled by the caller; default retains the model.
+    return prev_model, dict(prev_hp)
+
+
+async def _default_propose(
+    settings: Settings,
+    *,
+    memory_text: str,
+    allowlist: list[str],
+    best_summary: str,
+    dataset_summary: str,
+    metric: str,
+    goal_word: str,
+) -> NextStepDecision:
+    """Default agent call — the real Vertex/Gemini structured next-step request."""
+
+    return await llm.request_next_step_ablation(
+        settings,
+        memory_text=memory_text,
+        allowlist=allowlist,
+        best_summary=best_summary,
+        dataset_summary=dataset_summary,
+        metric=metric,
+        goal_word=goal_word,
+    )
+
+
+async def run_cell(
+    descriptor: benchmark.DatasetDescriptor,
+    regime: MemoryRegime,
+    seed: int,
+    *,
+    k: int,
+    m: int,
+    iterations: int,
+    store: object,
+    settings: Settings,
+    state_dir: Path = STATE_DIR,
+    propose=None,
+    compactor=None,
+    context_token_limit: int | None = None,
+    compaction_token_threshold: int | None = None,
+    repro: dict | None = None,
+) -> ExperimentCell:
+    """Run one ablation cell to budget; persist records, views and (regime C) artifacts.
+
+    Resumable (SC-007): a terminal cell is returned untouched; a partially-run cell continues
+    from its last recorded iteration. The exact memory view is persisted before each decision
+    (FR-013); ``all_raw`` that exceeds ``context_token_limit`` stops the cell and records it
+    ``context_limited`` (clarification 2026-06-13) rather than silently truncating.
+    """
+
+    propose = propose or _default_propose
+    cid = cell_id_for(descriptor.dataset_id, regime, seed, k, m)
+    log = store_mod.get_logger(store, cid)
+    metric = descriptor.primary_metric
+    direction = descriptor.metric_direction
+    goal_word = "raise" if direction > 0 else "lower"
+    allowlist = allowlist_for(descriptor.task_type)
+    baseline = BASELINE_BY_TASK[descriptor.task_type]
+    dataset_summary = f"{descriptor.dataset_id} ({descriptor.task_type.value}), {len(descriptor.feature_names)} features"
+
+    # --- resume bookkeeping ---------------------------------------------------
+    existing_cell = store.get_cell(cid)
+    if existing_cell is not None and existing_cell.status in (
+        CellStatus.completed,
+        CellStatus.context_limited,
+        CellStatus.failed,
+    ):
+        log.info("cell_skipped_terminal", status=existing_cell.status.value)
+        return existing_cell
+
+    history_records: list[ExperimentRecord] = store.get_records(cid)
+    best_primary: float | None = None
+    best_model = "none"
+    for r in history_records:
+        val = (r.test_metrics or r.metrics).get(metric)
+        if val is not None and _is_better(val, best_primary, direction):
+            best_primary, best_model = val, r.model_name
+    prev_model = baseline
+    prev_hp: dict = {}
+    if history_records:
+        last = history_records[-1]
+        prev_model = last.executed_config.get("model_name", baseline)
+        prev_hp = dict(last.executed_config.get("hyperparameters", {}))
+    start_iter = len(history_records) + 1
+
+    dataset = benchmark.load_dataset(descriptor.dataset_id)
+    split = benchmark.frozen_split(descriptor.dataset_id, state_dir=state_dir)
+
+    repro_stamp = {
+        "benchmark_version": descriptor.benchmark_version,
+        "split_ref": descriptor.split_ref,
+        "seed": seed,
+        "regime": regime.value,
+        "k": k,
+        "m": m,
+        **(repro or {}),
+    }
+    cell = ExperimentCell(
+        cell_id=cid, dataset_id=descriptor.dataset_id, regime=regime, seed=seed,
+        k=k, m=m, budget=iterations, status=CellStatus.running, repro=repro_stamp,
+        last_iteration=len(history_records) or None,
+        created_ts=existing_cell.created_ts if existing_cell else None,
+    )
+    store.upsert_cell(cell)
+    if start_iter <= iterations:
+        log.info("cell_started", regime=regime.value, seed=seed, k=k, m=m, budget=iterations, resume_from=start_iter)
+
+    status = CellStatus.completed
+    latest_artifact = store.latest_artifact(cid)
+
+    for i in range(start_iter, iterations + 1):
+        view = memory.build_view(
+            regime, history_records, k=k, cell_id=cid, iteration=i, latest_artifact=latest_artifact
+        )
+        # all_raw context-limit guard (clarification 2026-06-13): stop, record context_limited.
+        if context_token_limit is not None and view.prompt_token_count > context_token_limit:
+            status = CellStatus.context_limited
+            log.warning(
+                "context_limited", iteration=i,
+                prompt_token_count=view.prompt_token_count, limit=context_token_limit,
+                remaining_budget=iterations - (i - 1),
+            )
+            break
+
+        proposal: NextStepDecision | None = None
+        rejected = False
+        if i == 1:
+            model, hp, rationale = baseline, {}, "baseline (first iteration)"
+        else:
+            best_summary = f"{best_model} {metric}={best_primary:.4f}" if best_primary is not None else "none yet"
+            decision = await propose(
+                settings, memory_text=view.rendered_text, allowlist=list(allowlist),
+                best_summary=best_summary, dataset_summary=dataset_summary,
+                metric=metric, goal_word=goal_word,
+            )
+            if decision.action is NextAction.stop:
+                log.info("agent_stop", iteration=i, reason=decision.reason)
+                status = CellStatus.completed
+                break
+            proposal = decision
+            try:
+                validate_decision(decision, prev_model, allowlist)
+            except ValidationRejected as exc:
+                rejected = True
+                model, hp = prev_model, dict(prev_hp)
+                rationale = f"REJECTED proposal; retained {prev_model}. {exc}"
+                log.warning("proposal_rejected", iteration=i, reason=str(exc), action=decision.action.value)
+            else:
+                model, hp = _apply_decision(decision, prev_model, prev_hp)
+                rationale = decision.reason or f"applied {decision.action.value}"
+
+        store.save_view(view)  # exact memory shown, persisted BEFORE the decision is recorded
+        val_metrics, test_metrics = score_on_split(
+            dataset, feature_schema=descriptor.feature_schema, target=descriptor.target,
+            task_type=descriptor.task_type, split=split, model_name=model,
+            hyperparameters=hp, allowlist=allowlist,
+        )
+        primary = test_metrics[metric]
+        improved = _is_better(primary, best_primary, direction)
+        if improved:
+            best_primary, best_model = primary, model
+
+        record = ExperimentRecord(
+            iteration=i, dataset_size=len(dataset), model_name=model, hyperparameters=hp,
+            metrics=test_metrics, rationale=rationale, timestamp=_now(),
+            cell_id=cid, dataset_id=descriptor.dataset_id, regime=regime, seed=seed, k=k, m=m,
+            proposal=proposal, executed_config={"model_name": model, "hyperparameters": hp},
+            val_metrics=val_metrics, test_metrics=test_metrics, improved=improved,
+            rejected=rejected, memory_view_ref=view.content_hash,
+        )
+        store.append_record(record)
+        history_records.append(record)
+        log.info(
+            "iteration_done", iteration=i, model=model, **{metric: round(primary, 4)},
+            improved=improved, rejected=rejected, prompt_token_count=view.prompt_token_count,
+            included_records=len(view.included_record_ids), memory_view_ref=view.content_hash,
+        )
+        prev_model, prev_hp = model, hp
+
+        # --- outer compaction loop (regime C) — Principle XII ----------------
+        if (
+            regime is MemoryRegime.compacted_recent
+            and compactor is not None
+            and compaction.should_compact(
+                i, m, prompt_tokens=view.prompt_token_count,
+                token_threshold=compaction_token_threshold,
+            )
+        ):
+            source = compaction.select_source(history_records, i)  # at/before trigger only (SC-005)
+            artifact_dict = await compactor(
+                settings, source_records=source, descriptor=descriptor
+            )
+            store.save_artifact(
+                cell_id=cid, trigger_iteration=i, artifact=artifact_dict,
+                source_record_ids=[r.iteration for r in source],
+            )
+            latest_artifact = store.latest_artifact(cid)
+            log.info("compaction_done", iteration=i, source_records=len(source))
+
+    cell = cell.model_copy(
+        update={"status": status, "last_iteration": len(history_records)}
+    )
+    store.upsert_cell(cell)
+    log.info("cell_finished", status=status.value, iterations=len(history_records),
+             best_metric=metric, best_value=best_primary)
+    return cell
 
 
 # ---------------------------------------------------------------------------
@@ -212,29 +475,59 @@ def _write_summary(
 
 
 def _parse_args(settings: Settings) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Run the toy AutoDS loop.")
+    parser = argparse.ArgumentParser(
+        description="Run ONE memory-regime ablation cell (dataset × regime × seed × k × m)."
+    )
+    parser.add_argument("--dataset", required=True, help="benchmark dataset id (e.g. delivery_time)")
+    parser.add_argument(
+        "--regime", required=True,
+        choices=[r.value for r in MemoryRegime],
+        help="memory regime (the manipulated variable)",
+    )
+    parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--k", type=int, default=settings.recent_k)
+    parser.add_argument("--m", type=int, default=settings.compaction_m)
     parser.add_argument("--iterations", type=int, default=settings.n_iterations)
-    parser.add_argument("--patience", type=int, default=settings.patience)
-    parser.add_argument("--target-size", type=int, default=settings.target_size)
-    parser.add_argument("--metric", default=settings.primary_metric, choices=["rmse"])
+    parser.add_argument(
+        "--context-token-limit", type=int, default=None,
+        help="optional: stop all_raw and mark context_limited above this many memory tokens",
+    )
     return parser.parse_args()
+
+
+async def _run_single_cell(args: argparse.Namespace, settings: Settings) -> ExperimentCell:
+    """Build the store + descriptor and run one cell (contracts/runner-cli.md §Single cell).
+
+    Condition C wires the real compaction operator so a single ``compacted_recent`` cell
+    generates Directional Research Memory at its cadence.
+    """
+
+    engine = store_mod.make_engine(settings.database_url)
+    store = store_mod.Store(engine)
+    descriptor = benchmark.get_descriptor(args.dataset)
+    regime = MemoryRegime(args.regime)
+    compactor = compaction.compact if regime is MemoryRegime.compacted_recent else None
+    return await run_cell(
+        descriptor, regime, args.seed,
+        k=args.k, m=args.m, iterations=args.iterations,
+        store=store, settings=settings, state_dir=STATE_DIR,
+        compactor=compactor, context_token_limit=args.context_token_limit,
+        compaction_token_threshold=settings.compaction_token_threshold,
+    )
 
 
 def main() -> None:
     settings = Settings()
     args = _parse_args(settings)
-    settings = settings.model_copy(
-        update={
-            "n_iterations": args.iterations,
-            "patience": args.patience,
-            "target_size": args.target_size,
-            "primary_metric": args.metric,
-        }
-    )
     STATE_DIR.mkdir(parents=True, exist_ok=True)
     OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
-    asyncio.run(run_loop(settings, STATE_DIR, OUTPUTS_DIR))
-    print(f"Done. See {OUTPUTS_DIR / SUMMARY_FILE} and state/.")
+    cell = asyncio.run(_run_single_cell(args, settings))
+    print(
+        f"Done. cell={cell.cell_id} status={cell.status.value} "
+        f"iterations={cell.last_iteration}. State persisted to Postgres "
+        f"({settings.database_url.split('@')[-1]}); export with "
+        f"`python -m ds_agent_loop.store export`."
+    )
 
 
 if __name__ == "__main__":
