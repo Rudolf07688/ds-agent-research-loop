@@ -5,6 +5,8 @@ cover every row exactly once with no overlap (FR-017, SC-002)."""
 
 from __future__ import annotations
 
+import pytest
+
 from ds_agent_loop import benchmark as B
 from ds_agent_loop.prompts import TaskType
 
@@ -49,3 +51,95 @@ def test_split_independent_of_recompute_seed(tmp_path):
     a = B.frozen_split("wine", state_dir=tmp_path / "a")
     b = B.frozen_split("wine", state_dir=tmp_path / "b")
     assert a == b
+
+
+# ===========================================================================
+# Feature 004
+# ===========================================================================
+
+
+# --- T008 [US1]: descriptor validation by task type ------------------------
+
+
+def test_classification_descriptor_has_classifier_allowlist_and_higher_is_better():
+    d = B.get_descriptor("wine")
+    assert d.task_type is TaskType.classification
+    assert d.primary_metric == "macro_f1" and d.metric_direction == 1
+    assert d.model_allowlist and set(d.model_allowlist) <= set(B.CLASSIFIER_ALLOWLIST)
+
+
+def test_regression_descriptor_has_regressor_allowlist_and_lower_is_better():
+    d = B.get_descriptor("diabetes")
+    assert d.task_type is TaskType.regression
+    assert d.primary_metric == "rmse" and d.metric_direction == -1
+    assert d.model_allowlist and set(d.model_allowlist) <= set(B.MODEL_ALLOWLIST)
+
+
+def test_metric_task_type_mismatch_is_rejected():
+    # a regression member declaring a classification metric is rejected at declaration
+    with pytest.raises(ValueError):
+        B.DatasetDescriptor(
+            dataset_id="x", task_type=TaskType.regression, feature_schema={"a": "numeric"},
+            target="t", primary_metric="macro_f1", metric_direction=1, split_ref="x-v1",
+        )
+
+
+def test_allowlist_task_type_mismatch_is_rejected():
+    # a classification member whose allowlist contains a regressor is rejected
+    with pytest.raises(ValueError):
+        B.DatasetDescriptor(
+            dataset_id="x", task_type=TaskType.classification, feature_schema={"a": "numeric"},
+            target="t", primary_metric="macro_f1", metric_direction=1, split_ref="x-v1",
+            model_allowlist=["LinearRegression"],
+        )
+
+
+# --- T009 [US1]: content-hash stability + no-LLM synthetic generation -------
+
+
+def test_content_hash_is_stable_across_processes(tmp_path):
+    # Recomputing from the fixed seed in two fresh dirs yields the same content hash (SC-003).
+    a = B.frozen_split("breast_cancer", state_dir=tmp_path / "a")
+    b = B.frozen_split("breast_cancer", state_dir=tmp_path / "b")
+    assert a.content_hash == b.content_hash
+    recomputed = B.content_hash("breast_cancer", B.BENCHMARK_VERSION,
+                                {"train": a.train, "val": a.val, "test": a.test})
+    assert recomputed == a.content_hash
+
+
+def test_anchored_synthetic_generates_rows_without_an_llm():
+    d = B.get_descriptor("delivery_time")
+    assert d.provenance == "anchored_synthetic"
+    df = B.load_dataset("delivery_time")  # pure-Python generation, no network/LLM
+    assert len(df) > 0 and d.target in df.columns
+
+
+# --- T014 [US2]: suite composition -----------------------------------------
+
+
+def test_suite_covers_both_task_types_and_provenances_incl_delivery_time():
+    descriptors = B.suite()
+    assert 4 <= len(descriptors) <= 6
+    task_types = {d.task_type for d in descriptors}
+    provenances = {d.provenance for d in descriptors}
+    assert task_types == {TaskType.regression, TaskType.classification}
+    assert provenances == {"anchored_synthetic", "curated_real"}
+    assert "delivery_time" in {d.dataset_id for d in descriptors}
+
+
+# --- T015 [US2]: stratified classification split ----------------------------
+
+
+def test_stratified_split_preserves_all_classes_and_no_leakage(tmp_path):
+    for dataset_id in ("wine", "iris", "breast_cancer"):
+        df = B.load_dataset(dataset_id)
+        d = B.get_descriptor(dataset_id)
+        split = B.frozen_split(dataset_id, state_dir=tmp_path / dataset_id)
+        assert split.stratified is True
+        classes = set(df[d.target].unique().tolist())
+        for part in ("train", "val", "test"):
+            present = set(df[d.target].iloc[split[part]].unique().tolist())
+            assert present == classes  # every class in every partition
+        # no test-row leakage: partitions are disjoint and cover all rows exactly once
+        idx = split["train"] + split["val"] + split["test"]
+        assert sorted(idx) == list(range(len(df)))

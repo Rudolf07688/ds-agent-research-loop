@@ -70,17 +70,25 @@ async def run_sweep(
     n_iter = iterations or settings.n_iterations
     repro = {"commit": _git_commit(), "settings": _settings_snapshot(settings)}
 
+    # Resolve every member from the materialized, versioned suite (US4): materialize once
+    # (idempotent), then load each member's descriptor + frozen split by id.
+    benchmark.materialize_suite(store, list(dataset_ids), version=settings.benchmark_version)
+    resolved = {
+        d: benchmark.load_member(store, d, version=settings.benchmark_version)
+        for d in dataset_ids
+    }
+
     results: list[ExperimentCell] = []
     for dataset_id, regime_v, seed, k, m in product(dataset_ids, regime_vals, seed_vals, k_vals, m_vals):
         regime = MemoryRegime(regime_v)
-        descriptor = benchmark.get_descriptor(dataset_id)
+        descriptor, split, _ = resolved[dataset_id]
         cid = cell_id_for(dataset_id, regime, seed, k, m)
         cell_compactor = (compactor or compaction.compact) if regime is MemoryRegime.compacted_recent else None
         try:
             cell = await run_cell(
                 descriptor, regime, seed, k=k, m=m, iterations=n_iter,
                 store=store, settings=settings, state_dir=state_dir,
-                propose=propose, compactor=cell_compactor,
+                propose=propose, split=split, compactor=cell_compactor,
                 context_token_limit=context_token_limit,
                 compaction_token_threshold=settings.compaction_token_threshold,
                 repro=repro,

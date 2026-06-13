@@ -166,6 +166,32 @@ The harness keeps every run **replayable and resumable** (interrupted sweeps don
 finished cells), persists the **exact memory shown** before each decision, and emits **structured
 logs to stdout and Postgres**. Full walkthrough: `specs/003-memory-compaction-ablation/quickstart.md`.
 
+## Materialize & export the versioned benchmark (spec 004)
+
+The benchmark suite is a **fixed, versioned, Postgres-persisted** artifact: each member's fixed
+factors (task type, primary metric + direction, frozen action space, model allowlist, budget,
+patience) and its stratified, content-hashed train/val/test split are materialized into the
+`benchmark_members` / `benchmark_splits` tables (Alembic migration `0002`; schema is created
+**only** via `alembic upgrade head`, never an operational `create_all`).
+
+```bash
+uv run alembic upgrade head                                   # creates the two tables
+
+# materialize the suite under BENCHMARK_VERSION (idempotent; re-run is a no-op unless data drifts):
+uv run python -m ds_agent_loop.benchmark materialize          # or: --datasets diabetes,wine
+
+# export a member to DB-free, byte-identical JSON/CSV (descriptor.json + rows.csv + split.json):
+uv run python -m ds_agent_loop.benchmark export wine outputs/benchmark
+```
+
+Members load by id (`benchmark.load_member`) with a content-hash assertion guaranteeing
+byte-identical reuse across processes; classification splits are stratified so every class appears
+in every partition. Any change to a fixed factor without a `BENCHMARK_VERSION` bump is rejected
+loudly (`BenchmarkDriftError`), and a new version coexists with the old so prior results stay
+attributable. The loop (`main` / `experiment sweep`) resolves each member's descriptor + frozen
+split from this materialized suite — no dataset-specific code path. Full walkthrough +
+schema/API contracts: `specs/004-benchmark-harness/quickstart.md` and `.../contracts/`.
+
 ## Live verification (manual, real Vertex AI call)
 
 The offline test suite is hermetic. To verify a real Gemini/Vertex round-trip (excluded from

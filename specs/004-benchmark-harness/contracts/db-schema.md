@@ -51,6 +51,16 @@ PK: `(dataset_id, benchmark_version)`.
 - `upgrade()` — `op.create_table` for both, mirroring `store.py` Table defs (Core).
 - `downgrade()` — drop `benchmark_splits` then `benchmark_members`.
 
+## Implementation cross-reference
+
+- Table definitions: `src/ds_agent_loop/store.py` (`benchmark_members`, `benchmark_splits`).
+- Migration: `alembic/versions/0002_benchmark_members_and_splits.py` (down_revision `0001`).
+- Read/write helpers: `Store` / `FakeStore` (`upsert_benchmark_member`, `get_benchmark_member`,
+  `upsert_benchmark_split`, `get_benchmark_split`, `all_benchmark_members`).
+- Public API consuming these tables: `benchmark.materialize_suite` / `load_member` /
+  `export_member` / `check_version_drift` (see `benchmark-api.md`).
+- Workflow walkthrough: `../quickstart.md`; user-facing summary: repo `README.md`.
+
 ## Invariants enforced in code (not DDL)
 
 - Upsert is idempotent on `(dataset_id, benchmark_version)`; an existing row's `content_hash` /

@@ -25,8 +25,9 @@
 </head>
 <body>
 <h1>Directional Research Memory — Progress Snapshot</h1>
-<p>Snapshot taken <code>2026-06-13</code> on a break. Active branch
-<code>004-benchmark-harness</code>. Thesis target: <em>Directional Research Memory for
+<p>Snapshot taken <code>2026-06-13</code>. Active branch
+<code>004-benchmark-harness</code> — feature <strong>implemented and green</strong> (106 tests
+passing, offline + Postgres). Thesis target: <em>Directional Research Memory for
 Autonomous Data-Scientist Agents — Compaction as Momentum in Experiment Space</em>.</p>
 
 <h2>Roadmap status</h2>
@@ -35,52 +36,68 @@ Autonomous Data-Scientist Agents — Compaction as Momentum in Experiment Space<
   <tr><td>001 · AutoDS Loop</td><td>Baseline inner loop, 2-schema LLM contract, allowlist</td><td class="done">done</td></tr>
   <tr><td>002 · Live + Containerize</td><td>Gemini/Vertex via minimal ADK agent; container takes config at run time</td><td class="done">done</td></tr>
   <tr><td>003 · Memory-Compaction Ablation</td><td>First A/B/C ablation with Postgres provenance</td><td class="done">done</td></tr>
-  <tr><td>004 · Benchmark Harness &amp; Suite</td><td>Versioned multi-dataset suite, frozen splits/budgets/action-space</td><td class="active">spec drafted</td></tr>
+  <tr><td>004 · Benchmark Harness &amp; Suite</td><td>Versioned multi-dataset suite, frozen splits/budgets/action-space</td><td class="done">implemented</td></tr>
   <tr><td>005 · Memory-Regime Abstraction</td><td>One interface behind 3 regimes; exact-memory-shown provenance</td><td class="pending">planned</td></tr>
   <tr><td>006 · Compaction Operator</td><td>Typed belief-schema artifact; outer compaction loop</td><td class="pending">planned</td></tr>
   <tr><td>007 · A/B/C Study</td><td>Multi-dataset, multi-seed pre-registered run</td><td class="pending">planned</td></tr>
   <tr><td>008–010 · Analysis / Theory / Whitepaper</td><td>Phase transition, momentum theory, thesis assembly</td><td class="pending">planned</td></tr>
 </table>
 
-<h2>Where we are on 004</h2>
+<h2>What 004 delivers</h2>
 <ul>
-  <li><code>specs/004-benchmark-harness/spec.md</code> — <strong>Draft</strong> complete:
-    a versioned suite of tabular datasets (regression <em>and</em> classification), each with a
-    frozen train/val/test split, a pre-registered primary metric + direction, a fixed experiment
-    budget, a frozen action space, and a task-appropriate model allowlist.</li>
-  <li>Provenance is mixed: <strong>anchored-synthetic</strong> members (deterministic Python
-    expansion from a saved <code>data_spec</code>, no LLM) and a few <strong>curated real
-    public</strong> tabular datasets for external validity. The seed delivery-time task becomes
-    one member, not the whole project.</li>
-  <li>Frozen split rows are materialized and persisted in <strong>Postgres</strong> (Alembic-managed)
-    and exportable to JSON/CSV, so splits are byte-identical across every regime and seed.</li>
-  <li>Scope is deliberately the <strong>data + harness layer only</strong> — no memory regimes (005),
+  <li>A <strong>versioned suite</strong> of 5 tabular members — regression <em>and</em>
+    classification — each with a frozen train/val/test split, a pre-registered primary metric +
+    direction, a fixed experiment budget, a frozen action space, and a task-appropriate model
+    allowlist. Composition: <code>delivery_time</code> (anchored-synthetic, regression) +
+    <code>diabetes</code> (regression) + <code>wine</code> / <code>iris</code> /
+    <code>breast_cancer</code> (classification).</li>
+  <li>Provenance is mixed: <strong>anchored-synthetic</strong> (deterministic Python generation, no
+    LLM) and <strong>curated-real</strong> sklearn datasets for external validity. The seed
+    delivery-time task is now one member, not the whole project.</li>
+  <li>Frozen split rows are <strong>materialized and persisted in Postgres</strong> (Alembic-managed)
+    and exportable to JSON/CSV, byte-identical across every regime and seed (SC-001…SC-007 all met).</li>
+  <li>Scope held to the <strong>data + harness layer only</strong> — no memory regimes (005),
     no compaction operator (006), no ablation study (007).</li>
-  <li><code>checklists/requirements.md</code> — all quality gates pass; no
-    <code>[NEEDS CLARIFICATION]</code> markers remain.</li>
 </ul>
 
-<h2>Also done this session</h2>
+<h2>How it was built</h2>
 <ul>
-  <li>Constitution amended to <strong>v5.3.0</strong> (commit <code>0f37893</code>): Principle VII now
-    requires every generated HTML report to use the canonical dark color scheme of this file, with
-    the exact palette recorded inline. <em>This snapshot follows that scheme.</em></li>
-  <li>GitNexus index refreshed (<code>1,252 nodes | 1,715 edges | 40 clusters | 36 flows</code>).</li>
+  <li><strong>Foundational:</strong> <code>DatasetDescriptor</code> extended with
+    <code>provenance / budget / patience / action_space / model_allowlist</code> (+ task-type
+    validation); <code>FrozenSplit</code>, <code>content_hash</code>, <code>member_fingerprint</code>,
+    and <code>BenchmarkDriftError</code> / <code>SplitError</code> added to <code>benchmark.py</code>.</li>
+  <li><strong>Persistence:</strong> <code>benchmark_members</code> + <code>benchmark_splits</code>
+    tables (SQLAlchemy Core + <code>FakeStore</code> mirror) created exclusively via Alembic migration
+    <code>0002</code> (verified upgrade → downgrade → upgrade, idempotent &amp; reversible).</li>
+  <li><strong>API:</strong> <code>materialize_suite</code> (idempotent, drift-rejecting),
+    <code>load_member</code> (content-hash assertion), <code>check_version_drift</code> (version
+    coexistence), <code>export_member</code> (byte-identical JSON/CSV round-trip), plus a
+    <code>benchmark</code> CLI (<code>materialize</code> / <code>export</code>).</li>
+  <li><strong>Splits:</strong> stratified two-stage split for classification (every class in every
+    partition); fixed-seed shuffle for regression; no test-row leakage.</li>
+  <li><strong>Loop (US4):</strong> <code>main</code> / <code>experiment sweep</code> now resolve the
+    descriptor + frozen split from the materialized suite via <code>load_member</code>; the frozen
+    action space is enforced and the stop reason is recorded — no dataset-specific path.</li>
+  <li><strong>Tests:</strong> 106 passing (offline + Postgres integration), covering descriptor
+    validation, hash stability, stratification, version drift/coexistence, export round-trip, and
+    re-materialization idempotency (SC-001…SC-007).</li>
 </ul>
 
 <h2>Next step on resume</h2>
 <ul>
-  <li>Run <code>/speckit-plan</code> on 004 to produce the implementation plan and design artifacts,
-    then <code>/speckit-tasks</code> to generate the dependency-ordered task list.</li>
-  <li>004 unblocks everything downstream — no fair memory comparison exists without fixed
-    datasets, splits, and budgets.</li>
+  <li>004 unblocks everything downstream — proceed to <strong>005 · Memory-Regime Abstraction</strong>
+    (one interface behind the three regimes), now that fixed datasets, splits, budgets, and action
+    spaces exist.</li>
 </ul>
 
-<p class="note"><strong>Uncommitted at break.</strong> The working tree holds the new
-<code>specs/004-benchmark-harness/</code> (untracked) plus modified
-<code>.specify/feature.json</code> (now points at 004), <code>AGENTS.md</code>,
-<code>CLAUDE.md</code> (GitNexus auto-update), <code>.devcontainer/devcontainer.json</code>, and
-this <code>notes/progress.html</code>. The constitution amendment is already committed; the 004
-spec and these companion changes are not yet committed.</p>
+<p class="note"><strong>Uncommitted.</strong> The 004 spec/plan/tasks are committed; the
+<em>implementation</em> is not yet. The working tree holds the new code
+(<code>src/ds_agent_loop/benchmark.py</code>, <code>store.py</code>, <code>main.py</code>,
+<code>experiment.py</code>), the new migration
+<code>alembic/versions/0002_benchmark_members_and_splits.py</code>, new/updated tests
+(<code>tests/test_benchmark.py</code>, <code>test_benchmark_persistence.py</code>,
+<code>test_loop.py</code>, <code>test_store_integration.py</code>), docs
+(<code>README.md</code>, <code>contracts/db-schema.md</code>), and this
+<code>notes/progress.html</code>. All 33 tasks in <code>tasks.md</code> are marked complete.</p>
 </body>
 </html>

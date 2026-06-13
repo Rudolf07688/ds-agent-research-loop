@@ -182,6 +182,41 @@ run_logs = Table(
     Column("ts", String),
 )
 
+# --- feature 004: the versioned, materialized benchmark (contracts/db-schema.md) -----------
+benchmark_members = Table(
+    "benchmark_members",
+    metadata,
+    Column("dataset_id", String, primary_key=True),
+    Column("benchmark_version", String, primary_key=True),
+    Column("task_type", String, nullable=False),
+    Column("provenance", String, nullable=False),
+    Column("target", String, nullable=False),
+    Column("primary_metric", String, nullable=False),
+    Column("metric_direction", Integer, nullable=False),
+    Column("budget", Integer, nullable=False),
+    Column("patience", Integer),
+    Column("feature_schema", JSONB),
+    Column("feature_names", JSONB),
+    Column("action_space", JSONB),
+    Column("model_allowlist", JSONB),
+    Column("fingerprint", String, nullable=False),
+    Column("created_ts", String),
+)
+
+benchmark_splits = Table(
+    "benchmark_splits",
+    metadata,
+    Column("dataset_id", String, primary_key=True),
+    Column("benchmark_version", String, primary_key=True),
+    Column("train_idx", JSONB, nullable=False),
+    Column("val_idx", JSONB, nullable=False),
+    Column("test_idx", JSONB, nullable=False),
+    Column("content_hash", String, nullable=False),
+    Column("stratified", Boolean, nullable=False),
+    Column("n_rows", Integer, nullable=False),
+    Column("created_ts", String),
+)
+
 
 # ---------------------------------------------------------------------------
 # Store (Postgres, SQLAlchemy Core)
@@ -362,6 +397,53 @@ class Store:
             ).mappings().all()
         return [dict(r) for r in rows]
 
+    # --- benchmark members + splits (feature 004) -----------------------------
+    def upsert_benchmark_member(self, row: dict[str, Any]) -> None:
+        row = {**row, "created_ts": row.get("created_ts") or _now()}
+        stmt = pg_insert(benchmark_members).values(**row).on_conflict_do_update(
+            index_elements=["dataset_id", "benchmark_version"],
+            set_={k: row[k] for k in row if k not in ("dataset_id", "benchmark_version", "created_ts")},
+        )
+        with self.engine.begin() as conn:
+            conn.execute(stmt)
+
+    def get_benchmark_member(self, dataset_id: str, version: str) -> dict[str, Any] | None:
+        with self.engine.begin() as conn:
+            row = conn.execute(
+                select(benchmark_members).where(
+                    (benchmark_members.c.dataset_id == dataset_id)
+                    & (benchmark_members.c.benchmark_version == version)
+                )
+            ).mappings().first()
+        return dict(row) if row else None
+
+    def upsert_benchmark_split(self, row: dict[str, Any]) -> None:
+        row = {**row, "created_ts": row.get("created_ts") or _now()}
+        stmt = pg_insert(benchmark_splits).values(**row).on_conflict_do_update(
+            index_elements=["dataset_id", "benchmark_version"],
+            set_={k: row[k] for k in row if k not in ("dataset_id", "benchmark_version", "created_ts")},
+        )
+        with self.engine.begin() as conn:
+            conn.execute(stmt)
+
+    def get_benchmark_split(self, dataset_id: str, version: str) -> dict[str, Any] | None:
+        with self.engine.begin() as conn:
+            row = conn.execute(
+                select(benchmark_splits).where(
+                    (benchmark_splits.c.dataset_id == dataset_id)
+                    & (benchmark_splits.c.benchmark_version == version)
+                )
+            ).mappings().first()
+        return dict(row) if row else None
+
+    def all_benchmark_members(self, version: str | None = None) -> list[dict[str, Any]]:
+        stmt = select(benchmark_members).order_by(benchmark_members.c.dataset_id)
+        if version is not None:
+            stmt = stmt.where(benchmark_members.c.benchmark_version == version)
+        with self.engine.begin() as conn:
+            rows = conn.execute(stmt).mappings().all()
+        return [dict(r) for r in rows]
+
 
 # ---------------------------------------------------------------------------
 # FakeStore (in-memory, hermetic) — same interface, same idempotent semantics
@@ -377,6 +459,8 @@ class FakeStore:
         self._views: dict[tuple[str, int], MemoryView] = {}
         self._artifacts: dict[tuple[str, int], dict[str, Any]] = {}
         self._logs: list[dict[str, Any]] = []
+        self._members: dict[tuple[str, str], dict[str, Any]] = {}
+        self._splits: dict[tuple[str, str], dict[str, Any]] = {}
         self._next_id = 1
 
     def upsert_cell(self, cell: ExperimentCell) -> None:
@@ -458,6 +542,32 @@ class FakeStore:
 
     def get_logs(self, cell_id: str) -> list[dict[str, Any]]:
         return [dict(line) for line in self._logs if line["cell_id"] == cell_id]
+
+    # --- benchmark members + splits (feature 004) -----------------------------
+    def upsert_benchmark_member(self, row: dict[str, Any]) -> None:
+        key = (row["dataset_id"], row["benchmark_version"])
+        created = self._members[key]["created_ts"] if key in self._members else (row.get("created_ts") or _now())
+        self._members[key] = {**row, "created_ts": created}
+
+    def get_benchmark_member(self, dataset_id: str, version: str) -> dict[str, Any] | None:
+        row = self._members.get((dataset_id, version))
+        return dict(row) if row else None
+
+    def upsert_benchmark_split(self, row: dict[str, Any]) -> None:
+        key = (row["dataset_id"], row["benchmark_version"])
+        created = self._splits[key]["created_ts"] if key in self._splits else (row.get("created_ts") or _now())
+        self._splits[key] = {**row, "created_ts": created}
+
+    def get_benchmark_split(self, dataset_id: str, version: str) -> dict[str, Any] | None:
+        row = self._splits.get((dataset_id, version))
+        return dict(row) if row else None
+
+    def all_benchmark_members(self, version: str | None = None) -> list[dict[str, Any]]:
+        rows = [
+            dict(r) for k, r in self._members.items()
+            if version is None or k[1] == version
+        ]
+        return sorted(rows, key=lambda r: r["dataset_id"])
 
 
 # ---------------------------------------------------------------------------

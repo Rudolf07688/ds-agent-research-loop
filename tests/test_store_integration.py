@@ -87,3 +87,39 @@ def test_real_artifact_and_logs_roundtrip(pg_store):
     assert len(arts) == 1 and arts[0]["artifact"]["confirmed_findings"] == ["y"]
     S.get_logger(pg_store, _TEST_CELL).info("iteration_done", iteration=1, rmse=42.0)
     assert any(line["event"] == "iteration_done" for line in pg_store.get_logs(_TEST_CELL))
+
+
+# --- feature 004: benchmark members + splits against the REAL store ----------
+
+
+def test_real_benchmark_materialize_load_and_idempotency(pg_store):
+    from ds_agent_loop import benchmark as B
+
+    version = "itest_v1"
+    for ds in ("diabetes", "wine"):
+        with pg_store.engine.begin() as conn:
+            for tbl in ("benchmark_splits", "benchmark_members"):
+                conn.execute(
+                    text(f"DELETE FROM {tbl} WHERE dataset_id = :d AND benchmark_version = :v"),
+                    {"d": ds, "v": version},
+                )
+
+    B.materialize_suite(pg_store, ["diabetes", "wine"], version=version)
+    # idempotent re-materialization is a no-op (no duplication, no drift)
+    B.materialize_suite(pg_store, ["diabetes", "wine"], version=version)
+
+    desc, split, df = B.load_member(pg_store, "wine", version=version)
+    assert desc.task_type.value == "classification" and split.stratified is True
+    recomputed = B.content_hash(
+        "wine", version, {"train": split.train, "val": split.val, "test": split.test}
+    )
+    assert recomputed == split.content_hash and len(df) > 0
+
+    # cleanup
+    for ds in ("diabetes", "wine"):
+        with pg_store.engine.begin() as conn:
+            for tbl in ("benchmark_splits", "benchmark_members"):
+                conn.execute(
+                    text(f"DELETE FROM {tbl} WHERE dataset_id = :d AND benchmark_version = :v"),
+                    {"d": ds, "v": version},
+                )

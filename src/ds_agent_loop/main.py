@@ -183,6 +183,7 @@ async def run_cell(
     settings: Settings,
     state_dir: Path = STATE_DIR,
     propose=None,
+    split=None,
     compactor=None,
     context_token_limit: int | None = None,
     compaction_token_threshold: int | None = None,
@@ -232,7 +233,10 @@ async def run_cell(
     start_iter = len(history_records) + 1
 
     dataset = benchmark.load_dataset(descriptor.dataset_id)
-    split = benchmark.frozen_split(descriptor.dataset_id, state_dir=state_dir)
+    # The frozen split is resolved from the materialized suite by the orchestrator (US4) and
+    # injected; fall back to the on-disk computation when run directly (offline tests).
+    if split is None:
+        split = benchmark.frozen_split(descriptor.dataset_id, state_dir=state_dir)
 
     repro_stamp = {
         "benchmark_version": descriptor.benchmark_version,
@@ -254,6 +258,12 @@ async def run_cell(
         log.info("cell_started", regime=regime.value, seed=seed, k=k, m=m, budget=iterations, resume_from=start_iter)
 
     status = CellStatus.completed
+    # The ablation cell is budget-governed: it runs the full N iterations so that the ONLY thing
+    # differing across regimes is the memory view (SC-002), never the iteration count. The member's
+    # `patience` is a persisted/enforced fixed factor used by the descriptor-driven toy loop
+    # (`run_loop`); here we record which terminal condition stopped the cell (FR-016).
+    stop_reason = "budget"
+    action_space = set(descriptor.action_space)
     latest_artifact = store.latest_artifact(cid)
 
     for i in range(start_iter, iterations + 1):
@@ -263,6 +273,7 @@ async def run_cell(
         # all_raw context-limit guard (clarification 2026-06-13): stop, record context_limited.
         if context_token_limit is not None and view.prompt_token_count > context_token_limit:
             status = CellStatus.context_limited
+            stop_reason = "context_limited"
             log.warning(
                 "context_limited", iteration=i,
                 prompt_token_count=view.prompt_token_count, limit=context_token_limit,
@@ -284,18 +295,33 @@ async def run_cell(
             if decision.action is NextAction.stop:
                 log.info("agent_stop", iteration=i, reason=decision.reason)
                 status = CellStatus.completed
+                stop_reason = "agent_stop"
                 break
             proposal = decision
-            try:
-                validate_decision(decision, prev_model, allowlist)
-            except ValidationRejected as exc:
+            # Bounded agency (FR-016): the member's frozen action space is enforced — an action
+            # outside it is rejected before training, like an out-of-allowlist model.
+            if decision.action.value not in action_space:
                 rejected = True
                 model, hp = prev_model, dict(prev_hp)
-                rationale = f"REJECTED proposal; retained {prev_model}. {exc}"
-                log.warning("proposal_rejected", iteration=i, reason=str(exc), action=decision.action.value)
+                rationale = (
+                    f"REJECTED action '{decision.action.value}' not in frozen action_space "
+                    f"{sorted(action_space)}; retained {prev_model}."
+                )
+                log.warning(
+                    "proposal_rejected", iteration=i, action=decision.action.value,
+                    reason="action not in frozen action_space",
+                )
             else:
-                model, hp = _apply_decision(decision, prev_model, prev_hp)
-                rationale = decision.reason or f"applied {decision.action.value}"
+                try:
+                    validate_decision(decision, prev_model, allowlist)
+                except ValidationRejected as exc:
+                    rejected = True
+                    model, hp = prev_model, dict(prev_hp)
+                    rationale = f"REJECTED proposal; retained {prev_model}. {exc}"
+                    log.warning("proposal_rejected", iteration=i, reason=str(exc), action=decision.action.value)
+                else:
+                    model, hp = _apply_decision(decision, prev_model, prev_hp)
+                    rationale = decision.reason or f"applied {decision.action.value}"
 
         store.save_view(view)  # exact memory shown, persisted BEFORE the decision is recorded
         val_metrics, test_metrics = score_on_split(
@@ -345,8 +371,9 @@ async def run_cell(
             latest_artifact = store.latest_artifact(cid)
             log.info("compaction_done", iteration=i, source_records=len(source))
 
+    repro_stamp = {**repro_stamp, "stop_reason": stop_reason}
     cell = cell.model_copy(
-        update={"status": status, "last_iteration": len(history_records)}
+        update={"status": status, "last_iteration": len(history_records), "repro": repro_stamp}
     )
     store.upsert_cell(cell)
     log.info("cell_finished", status=status.value, iterations=len(history_records),
@@ -505,14 +532,18 @@ async def _run_single_cell(args: argparse.Namespace, settings: Settings) -> Expe
     store_mod.upgrade_to_head(settings.database_url)  # schema owned by Alembic (Principle IV)
     engine = store_mod.make_engine(settings.database_url)
     store = store_mod.Store(engine)
-    descriptor = benchmark.get_descriptor(args.dataset)
+    # Resolve the member from the materialized, versioned suite (US4): no delivery-time-specific
+    # path — the descriptor, frozen split, allowlist, action space and budget all come from the
+    # persisted member, loaded by id.
+    benchmark.materialize_suite(store, [args.dataset], version=settings.benchmark_version)
+    descriptor, split, _ = benchmark.load_member(store, args.dataset, version=settings.benchmark_version)
     regime = MemoryRegime(args.regime)
     compactor = compaction.compact if regime is MemoryRegime.compacted_recent else None
     return await run_cell(
         descriptor, regime, args.seed,
         k=args.k, m=args.m, iterations=args.iterations,
         store=store, settings=settings, state_dir=STATE_DIR,
-        compactor=compactor, context_token_limit=args.context_token_limit,
+        split=split, compactor=compactor, context_token_limit=args.context_token_limit,
         compaction_token_threshold=settings.compaction_token_threshold,
     )
 

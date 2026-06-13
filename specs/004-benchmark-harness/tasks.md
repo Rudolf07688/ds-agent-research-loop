@@ -33,8 +33,8 @@ Single `src`-layout research library: `src/ds_agent_loop/`, `alembic/versions/`,
 
 **Purpose**: Confirm the toolchain and design contracts are loaded; no scaffolding needed (project exists).
 
-- [ ] T001 Verify `uv run pytest` and `uv run alembic current` run clean on branch `004-benchmark-harness` (baseline before changes)
-- [ ] T002 Re-read contracts in `specs/004-benchmark-harness/contracts/` (db-schema.md, benchmark-api.md) and confirm table/field names against existing `src/ds_agent_loop/store.py` Table defs
+- [X] T001 Verify `uv run pytest` and `uv run alembic current` run clean on branch `004-benchmark-harness` (baseline before changes)
+- [X] T002 Re-read contracts in `specs/004-benchmark-harness/contracts/` (db-schema.md, benchmark-api.md) and confirm table/field names against existing `src/ds_agent_loop/store.py` Table defs
 
 ---
 
@@ -44,11 +44,11 @@ Single `src`-layout research library: `src/ds_agent_loop/`, `alembic/versions/`,
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete.
 
-- [ ] T003 Extend `DatasetDescriptor` in `src/ds_agent_loop/benchmark.py` with `provenance`, `budget`, `patience`, `action_space`, `model_allowlist` fields (data-model.md §DatasetDescriptor); populate them in `_descriptor_for`
-- [ ] T004 Add `FrozenSplit` and version-fingerprint helpers (`content_hash`, `member_fingerprint`) to `src/ds_agent_loop/benchmark.py` (data-model.md §FrozenSplit, §BenchmarkVersion); add `BenchmarkDriftError` and `SplitError` exceptions
-- [ ] T005 Define `benchmark_members` and `benchmark_splits` `Table` objects in `src/ds_agent_loop/store.py` per contracts/db-schema.md (SQLAlchemy Core, JSONB columns)
-- [ ] T006 Create Alembic migration `alembic/versions/0002_benchmark_members_and_splits.py` (down_revision `0001`) with `upgrade()`/`downgrade()` mirroring T005 (contracts/db-schema.md)
-- [ ] T007 Apply and verify the migration: `uv run alembic upgrade head` then `uv run alembic downgrade -1 && uv run alembic upgrade head` (idempotent, reversible)
+- [X] T003 Extend `DatasetDescriptor` in `src/ds_agent_loop/benchmark.py` with `provenance`, `budget`, `patience`, `action_space`, `model_allowlist` fields (data-model.md §DatasetDescriptor); populate them in `_descriptor_for`
+- [X] T004 Add `FrozenSplit` and version-fingerprint helpers (`content_hash`, `member_fingerprint`) to `src/ds_agent_loop/benchmark.py` (data-model.md §FrozenSplit, §BenchmarkVersion); add `BenchmarkDriftError` and `SplitError` exceptions
+- [X] T005 Define `benchmark_members` and `benchmark_splits` `Table` objects in `src/ds_agent_loop/store.py` per contracts/db-schema.md (SQLAlchemy Core, JSONB columns)
+- [X] T006 Create Alembic migration `alembic/versions/0002_benchmark_members_and_splits.py` (down_revision `0001`) with `upgrade()`/`downgrade()` mirroring T005 (contracts/db-schema.md)
+- [X] T007 Apply and verify the migration: `uv run alembic upgrade head` then `uv run alembic downgrade -1 && uv run alembic upgrade head` (idempotent, reversible)
 
 **Checkpoint**: Schema + typed entities ready — user stories can begin.
 
@@ -62,15 +62,15 @@ Single `src`-layout research library: `src/ds_agent_loop/`, `alembic/versions/`,
 
 ### Tests for User Story 1
 
-- [ ] T008 [P] [US1] Test descriptor validation in `tests/test_benchmark.py`: classification ⇒ classifier allowlist + higher-is-better metric; regression ⇒ regressor allowlist + lower-is-better; metric/task-type mismatch rejected
-- [ ] T009 [P] [US1] Test `content_hash` stability across processes and that an anchored-synthetic member generates rows with no LLM call in `tests/test_benchmark.py`
+- [X] T008 [P] [US1] Test descriptor validation in `tests/test_benchmark.py`: classification ⇒ classifier allowlist + higher-is-better metric; regression ⇒ regressor allowlist + lower-is-better; metric/task-type mismatch rejected
+- [X] T009 [P] [US1] Test `content_hash` stability across processes and that an anchored-synthetic member generates rows with no LLM call in `tests/test_benchmark.py`
 
 ### Implementation for User Story 1
 
-- [ ] T010 [US1] Implement `materialize_suite(store, dataset_ids, *, version)` (single-member path) in `src/ds_agent_loop/benchmark.py`: build descriptor, compute split+hash+fingerprint, upsert into `benchmark_members`/`benchmark_splits` (contracts/benchmark-api.md)
-- [ ] T011 [US1] Implement store upsert/read helpers for members + splits in `src/ds_agent_loop/store.py` (idempotent on `(dataset_id, version)`)
-- [ ] T012 [US1] Implement `load_member(store, dataset_id, *, version)` in `src/ds_agent_loop/benchmark.py`: read persisted descriptor+split, regenerate rows, assert content hash matches (raise `BenchmarkDriftError` on mismatch)
-- [ ] T013 [US1] Add a `materialize` subcommand entry in `src/ds_agent_loop/benchmark.py` `__main__` / CLI (quickstart §2)
+- [X] T010 [US1] Implement `materialize_suite(store, dataset_ids, *, version)` (single-member path) in `src/ds_agent_loop/benchmark.py`: build descriptor, compute split+hash+fingerprint, upsert into `benchmark_members`/`benchmark_splits` (contracts/benchmark-api.md)
+- [X] T011 [US1] Implement store upsert/read helpers for members + splits in `src/ds_agent_loop/store.py` (idempotent on `(dataset_id, version)`)
+- [X] T012 [US1] Implement `load_member(store, dataset_id, *, version)` in `src/ds_agent_loop/benchmark.py`: read persisted descriptor+split, regenerate rows, assert content hash matches (raise `BenchmarkDriftError` on mismatch)
+- [X] T013 [US1] Add a `materialize` subcommand entry in `src/ds_agent_loop/benchmark.py` `__main__` / CLI (quickstart §2)
 
 **Checkpoint**: One member is declarable, materializable, and byte-identically loadable (SC-001).
 
@@ -84,14 +84,14 @@ Single `src`-layout research library: `src/ds_agent_loop/`, `alembic/versions/`,
 
 ### Tests for User Story 2
 
-- [ ] T014 [P] [US2] Test suite composition in `tests/test_benchmark.py`: `suite()`/`DEFAULT_SUITE_IDS` yields 4–6 members covering both task types and both provenances incl. `delivery_time`
-- [ ] T015 [P] [US2] Test stratified classification split preserves all classes across train/val/test and no test-row leakage in `tests/test_benchmark.py`
+- [X] T014 [P] [US2] Test suite composition in `tests/test_benchmark.py`: `suite()`/`DEFAULT_SUITE_IDS` yields 4–6 members covering both task types and both provenances incl. `delivery_time`
+- [X] T015 [P] [US2] Test stratified classification split preserves all classes across train/val/test and no test-row leakage in `tests/test_benchmark.py`
 
 ### Implementation for User Story 2
 
-- [ ] T016 [US2] Make `frozen_split` stratified for classification (two-stage `train_test_split(stratify=y)` under `SPLIT_SEED`) and flag a member whose split drops a class (`SplitError`) in `src/ds_agent_loop/benchmark.py` (research.md Decision 2)
-- [ ] T017 [US2] Tag each loader's descriptor with `provenance` (`anchored_synthetic` for `delivery_time`, `curated_real` for sklearn datasets) and confirm default suite has the required mix in `src/ds_agent_loop/benchmark.py`
-- [ ] T018 [US2] Extend `materialize_suite` to materialize the whole suite and enumerate persisted members (`tests/test_benchmark_persistence.py` covers full-suite materialize→load)
+- [X] T016 [US2] Make `frozen_split` stratified for classification (two-stage `train_test_split(stratify=y)` under `SPLIT_SEED`) and flag a member whose split drops a class (`SplitError`) in `src/ds_agent_loop/benchmark.py` (research.md Decision 2)
+- [X] T017 [US2] Tag each loader's descriptor with `provenance` (`anchored_synthetic` for `delivery_time`, `curated_real` for sklearn datasets) and confirm default suite has the required mix in `src/ds_agent_loop/benchmark.py`
+- [X] T018 [US2] Extend `materialize_suite` to materialize the whole suite and enumerate persisted members (`tests/test_benchmark_persistence.py` covers full-suite materialize→load)
 
 **Checkpoint**: Full mixed suite materializes and every member loads independently (SC-002, SC-003).
 
@@ -105,13 +105,13 @@ Single `src`-layout research library: `src/ds_agent_loop/`, `alembic/versions/`,
 
 ### Tests for User Story 3
 
-- [ ] T019 [P] [US3] Test version-drift rejection in `tests/test_benchmark_persistence.py`: re-materializing under the same version with a changed fixed factor raises `BenchmarkDriftError`
-- [ ] T020 [P] [US3] Test version coexistence: materializing a new version leaves prior-version rows intact and attributable in `tests/test_benchmark_persistence.py`
+- [X] T019 [P] [US3] Test version-drift rejection in `tests/test_benchmark_persistence.py`: re-materializing under the same version with a changed fixed factor raises `BenchmarkDriftError`
+- [X] T020 [P] [US3] Test version coexistence: materializing a new version leaves prior-version rows intact and attributable in `tests/test_benchmark_persistence.py`
 
 ### Implementation for User Story 3
 
-- [ ] T021 [US3] Implement `check_version_drift(store, descriptor, *, version)` in `src/ds_agent_loop/benchmark.py`: compare recomputed fingerprint to persisted; mismatch under existing version ⇒ raise (research.md Decision 3)
-- [ ] T022 [US3] Wire `check_version_drift` into `materialize_suite` upsert path so drift is caught before write; ensure rows keyed by `(dataset_id, benchmark_version)` so versions coexist
+- [X] T021 [US3] Implement `check_version_drift(store, descriptor, *, version)` in `src/ds_agent_loop/benchmark.py`: compare recomputed fingerprint to persisted; mismatch under existing version ⇒ raise (research.md Decision 3)
+- [X] T022 [US3] Wire `check_version_drift` into `materialize_suite` upsert path so drift is caught before write; ensure rows keyed by `(dataset_id, benchmark_version)` so versions coexist
 
 **Checkpoint**: Version is attached to every member; drift is rejected; old versions re-derivable (SC-005).
 
@@ -125,13 +125,13 @@ Single `src`-layout research library: `src/ds_agent_loop/`, `alembic/versions/`,
 
 ### Tests for User Story 4
 
-- [ ] T023 [P] [US4] Integration test in `tests/test_loop.py`: stubbed-LLM run on a regression member (regressors only, lower-is-better, stops at budget) and a classification member (classifiers only, higher-is-better, out-of-allowlist proposal rejected before training)
-- [ ] T024 [P] [US4] Test the loop resolves its descriptor + frozen split from the materialized suite (not file-only) and records the stop reason in `tests/test_loop.py`
+- [X] T023 [P] [US4] Integration test in `tests/test_loop.py`: stubbed-LLM run on a regression member (regressors only, lower-is-better, stops at budget) and a classification member (classifiers only, higher-is-better, out-of-allowlist proposal rejected before training)
+- [X] T024 [P] [US4] Test the loop resolves its descriptor + frozen split from the materialized suite (not file-only) and records the stop reason in `tests/test_loop.py`
 
 ### Implementation for User Story 4
 
-- [ ] T025 [US4] Update `experiment.py` / `main.py` to resolve the descriptor + frozen split via `benchmark.load_member` (materialized suite) instead of `get_descriptor`+file split, keeping the descriptor-driven `run_cell` path unchanged (research.md Decision 6)
-- [ ] T026 [US4] Ensure the member's frozen `action_space` is enforced and the stop reason (budget `N` vs patience `k`) is recorded in the run record (FR-016) in `src/ds_agent_loop/main.py`
+- [X] T025 [US4] Update `experiment.py` / `main.py` to resolve the descriptor + frozen split via `benchmark.load_member` (materialized suite) instead of `get_descriptor`+file split, keeping the descriptor-driven `run_cell` path unchanged (research.md Decision 6)
+- [X] T026 [US4] Ensure the member's frozen `action_space` is enforced and the stop reason (budget `N` vs patience `k`) is recorded in the run record (FR-016) in `src/ds_agent_loop/main.py`
 
 **Checkpoint**: Loop runs on any member by id with no delivery-time branch (SC-004).
 
@@ -145,13 +145,13 @@ Single `src`-layout research library: `src/ds_agent_loop/`, `alembic/versions/`,
 
 ### Tests for User Story 5
 
-- [ ] T027 [P] [US5] Test export round-trip in `tests/test_benchmark_persistence.py`: `export_member` → reload → byte-identical rows + matching content hash
-- [ ] T028 [P] [US5] Test re-materialization idempotency (no duplication) and loud failure on content-hash divergence in `tests/test_benchmark_persistence.py` (SC-007)
+- [X] T027 [P] [US5] Test export round-trip in `tests/test_benchmark_persistence.py`: `export_member` → reload → byte-identical rows + matching content hash
+- [X] T028 [P] [US5] Test re-materialization idempotency (no duplication) and loud failure on content-hash divergence in `tests/test_benchmark_persistence.py` (SC-007)
 
 ### Implementation for User Story 5
 
-- [ ] T029 [US5] Implement `export_member(store, dataset_id, out_dir, *, version)` writing `descriptor.json`+`rows.csv`+`split.json` under `out_dir/<version>/<dataset_id>/` in `src/ds_agent_loop/benchmark.py` (contracts/benchmark-api.md)
-- [ ] T030 [US5] Add an `export` subcommand to the `benchmark.py` CLI (quickstart §5) and a reload/verify helper that re-asserts the content hash
+- [X] T029 [US5] Implement `export_member(store, dataset_id, out_dir, *, version)` writing `descriptor.json`+`rows.csv`+`split.json` under `out_dir/<version>/<dataset_id>/` in `src/ds_agent_loop/benchmark.py` (contracts/benchmark-api.md)
+- [X] T030 [US5] Add an `export` subcommand to the `benchmark.py` CLI (quickstart §5) and a reload/verify helper that re-asserts the content hash
 
 **Checkpoint**: Benchmark is inspectable and portably exportable (SC-006, SC-007).
 
@@ -159,9 +159,9 @@ Single `src`-layout research library: `src/ds_agent_loop/`, `alembic/versions/`,
 
 ## Phase 8: Polish & Cross-Cutting Concerns
 
-- [ ] T031 [P] Document the `benchmark_members`/`benchmark_splits` schema and the materialize/export workflow in `contracts/db-schema.md` cross-link + `README.md`/`notes/`
-- [ ] T032 Run `uv run pytest` (offline) and confirm the Postgres-backed integration tests pass under `docker compose up` end-to-end (Principle X)
-- [ ] T033 Run `notes/` HTML progress snapshot update using the canonical color scheme (Principle VII) and walk through `quickstart.md`
+- [X] T031 [P] Document the `benchmark_members`/`benchmark_splits` schema and the materialize/export workflow in `contracts/db-schema.md` cross-link + `README.md`/`notes/`
+- [X] T032 Run `uv run pytest` (offline) and confirm the Postgres-backed integration tests pass under `docker compose up` end-to-end (Principle X)
+- [X] T033 Run `notes/` HTML progress snapshot update using the canonical color scheme (Principle VII) and walk through `quickstart.md`
 
 ---
 

@@ -2,8 +2,19 @@
 
 from __future__ import annotations
 
+import asyncio
+
+from ds_agent_loop import benchmark as B
 from ds_agent_loop import main
-from ds_agent_loop.prompts import NextAction, NextStepDecision
+from ds_agent_loop import store as S
+from ds_agent_loop.prompts import (
+    CellStatus,
+    MemoryRegime,
+    NextAction,
+    NextStepDecision,
+    Settings,
+    TaskType,
+)
 
 
 # --- US4: T022 — rejection retains the prior model --------------------------
@@ -84,3 +95,86 @@ def test_stops_after_patience_rounds_without_improvement():
 def test_continues_when_within_patience():
     assert not main.should_stop(no_improvement_rounds=2, patience=3)
     assert not main.should_stop(no_improvement_rounds=0, patience=3)
+
+
+# ===========================================================================
+# Feature 004 — US4: the loop runs against any materialized member by id
+# ===========================================================================
+
+
+def _settings() -> Settings:
+    return Settings(_env_file=None)
+
+
+def _propose(model: str, action: NextAction = NextAction.keep_model, hp: dict | None = None):
+    async def propose(settings, **kwargs):
+        return NextStepDecision(action=action, model_name=model, hyperparameters=hp or {}, reason="x")
+    return propose
+
+
+def _run_member(store, dataset_id, *, propose, iterations=4, state_dir):
+    descriptor, split, _ = B.load_member(store, dataset_id)
+    return asyncio.run(
+        main.run_cell(
+            descriptor, MemoryRegime.recent_only, seed=0, k=3, m=10, iterations=iterations,
+            store=store, settings=_settings(), state_dir=state_dir, split=split,
+            propose=propose,
+        )
+    )
+
+
+# --- T023 [US4]: regression vs classification member, allowlist + direction --
+
+
+def test_loop_on_regression_member_uses_regressors_and_stops_at_budget(tmp_path):
+    store = S.FakeStore()
+    B.materialize_suite(store, ["diabetes"])
+    cell = _run_member(store, "diabetes", propose=_propose("RandomForestRegressor"), state_dir=tmp_path)
+    assert cell.status is CellStatus.completed
+    assert cell.last_iteration == 4  # ran the full budget
+    assert cell.repro.get("stop_reason") == "budget"
+    records = store.get_records(cell.cell_id)
+    # direction-aware, lower-is-better regression metric reported on the frozen split
+    assert all("rmse" in r.test_metrics for r in records)
+
+
+def test_loop_on_classification_member_rejects_out_of_allowlist_before_training(tmp_path):
+    store = S.FakeStore()
+    B.materialize_suite(store, ["wine"])
+    # proposing a regressor for a classification member is rejected before any training (US4)
+    cell = _run_member(store, "wine", propose=_propose("RandomForestRegressor"), state_dir=tmp_path)
+    assert cell.status is CellStatus.completed
+    records = store.get_records(cell.cell_id)
+    assert all("macro_f1" in r.test_metrics for r in records)  # higher-is-better classification
+    # iterations 2..4 proposed an out-of-allowlist model -> rejected, baseline retained
+    assert any(r.rejected for r in records[1:])
+    assert all(r.model_name in B.CLASSIFIER_ALLOWLIST for r in records)
+
+
+def test_loop_rejects_proposal_outside_frozen_action_space(tmp_path):
+    store = S.FakeStore()
+    B.materialize_suite(store, ["diabetes"])
+    # expand_dataset is NOT in the frozen action space -> rejected before training (FR-016)
+    cell = _run_member(
+        store, "diabetes",
+        propose=_propose("RandomForestRegressor", action=NextAction.expand_dataset),
+        state_dir=tmp_path,
+    )
+    assert cell.status is CellStatus.completed
+    records = store.get_records(cell.cell_id)
+    assert any(r.rejected for r in records[1:])
+
+
+# --- T024 [US4]: descriptor + split resolved from materialized suite ---------
+
+
+def test_loop_resolves_member_from_materialized_suite_and_records_stop_reason(tmp_path):
+    store = S.FakeStore()
+    B.materialize_suite(store, ["diabetes"])
+    descriptor, split, _ = B.load_member(store, "diabetes")
+    # the loop is driven by the persisted descriptor + frozen split (not a file-only split)
+    assert descriptor.task_type is TaskType.regression
+    cell = _run_member(store, "diabetes", propose=_propose("RandomForestRegressor"), state_dir=tmp_path)
+    # the frozen split the loop scored on is the materialized one
+    assert split.content_hash == store.get_benchmark_split("diabetes", B.BENCHMARK_VERSION)["content_hash"]
+    assert cell.repro.get("stop_reason") in ("budget", "agent_stop")
