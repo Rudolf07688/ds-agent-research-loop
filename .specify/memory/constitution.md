@@ -1,38 +1,38 @@
 <!--
 SYNC IMPACT REPORT
 ==================
-Version change: 1.1.0 → 1.2.0
-Bump rationale: MINOR — added one new principle (VIII. Typed Models & Centralized
-  Settings via Pydantic); no existing principle redefined or removed.
+Version change: 1.2.0 → 1.3.0
+Bump rationale: MINOR — Principle I's physical-layout rule is relaxed (not removed) to
+  allow a `src`-layout library package plus a thin `entrypoint/` deployment consumer.
+  The principle's identity, intent, and constraints (single-purpose modules, no
+  frameworks/orchestration, YAGNI) are unchanged; only where the modules physically live
+  is broadened. No principle removed; safety principles (II, III) untouched.
 
 Principles:
-  I.    Simplicity & Readability First            (unchanged)
+  I.    Simplicity & Readability First            (amended — layout relaxed to src package + entrypoint)
   II.   Constrained LLM Contracts (Structured JSON Only)  (unchanged)
   III.  Bounded Agency (No Arbitrary Code Execution)      (unchanged)
   IV.   Inspectable & Reproducible State          (unchanged)
   V.    Anchored Synthetic Data Generation        (unchanged)
-  VI.   uv-Managed Python Environment             (unchanged)
+  VI.   uv-Managed Python Environment             (amended — run examples use the console script/module)
   VII.  Progress Communicated via notes/          (unchanged)
-  VIII. Typed Models & Centralized Settings (Pydantic)   (new)
+  VIII. Typed Models & Centralized Settings (Pydantic)   (unchanged)
 
-Added sections:
-  - Core Principle VIII
-  - Scope & Technology Constraints: pydantic / pydantic-settings as the typing + config layer
-
+Added sections: none
 Removed sections: none
 
 Templates / docs requiring review:
   ✅ .specify/memory/constitution.md (this file)
-  ⚠ specs/001-autods-loop/plan.md (add pydantic + pydantic-settings to dependencies;
-     note that entities/config are typed Pydantic models / a Settings object)
-  ⚠ specs/001-autods-loop/data-model.md (entities realized as Pydantic models;
-     RunConfig becomes a pydantic-settings Settings object)
-  ⚠ specs/001-autods-loop/tasks.md (Setup: add pydantic deps; Foundational: add a
-     centralized Settings model task; reflect Pydantic schema modeling)
+  ✅ README.md (already updated to the src-layout + entrypoint run instructions)
+  ⚠ specs/001-autods-loop/plan.md (Project Structure still shows the old flat repo-root
+     layout; reconcile to src/ds_agent_loop/ + entrypoint/ if regenerated)
+  ⚠ specs/001-autods-loop/data-model.md (file paths under state/ unchanged; module
+     locations now under the package)
+  ⚠ specs/001-autods-loop/tasks.md (historical record of the flat-layout build; left
+     as-is — the restructure is a post-implementation packaging step)
   ✅ .specify/templates/plan-template.md (generic Constitution Check gate — no change)
   ✅ .specify/templates/spec-template.md (no mandatory-section change)
   ✅ .specify/templates/tasks-template.md (no principle-driven category change)
-  ⚠ README.md (not yet created per spec repo layout)
 
 Deferred TODOs: none
 -->
@@ -43,12 +43,19 @@ Deferred TODOs: none
 
 ### I. Simplicity & Readability First
 
-The repository MUST prefer readability and short, flat files over abstraction. The
-project is a small offline toy experiment, not a production system or MLOps platform.
+The repository MUST prefer readability and short, single-purpose files over abstraction.
+The project is a small offline toy experiment, not a production system or MLOps platform.
 
-- The flat repo layout (single-purpose modules: `llm.py`, `data_gen.py`, `train.py`,
-  `history.py`, `prompts.py`, `main.py`) MUST be preserved; new indirection layers,
-  agent frameworks, or orchestration engines are prohibited.
+- The library is a small `src`-layout package (`src/ds_agent_loop/`) of single-purpose
+  modules (`llm.py`, `data_gen.py`, `train.py`, `history.py`, `prompts.py`, `main.py`).
+  This single-purpose-module decomposition MUST be preserved; new indirection layers,
+  agent frameworks, or orchestration engines are prohibited. (Earlier revisions kept
+  these modules at the repo root; packaging them under `src/` for publishing is
+  permitted and does not change the decomposition.)
+- Only a thin deployment consumer (`entrypoint/`) and runtime artifact directories
+  (`state/`, `outputs/`, `notes/`, `entrypoint/runs/`) live outside the package. The
+  consumer imports FROM the library, never the reverse; library logic MUST NOT leak into
+  `entrypoint/`.
 - YAGNI applies: features are added only when the experiment loop concretely needs
   them. Speculative generality MUST be justified before introduction.
 - Non-goals are binding: no multi-agent frameworks, background workers, databases,
@@ -125,8 +132,9 @@ All Python dependency management and script execution MUST go through `uv`.
 
 - Dependencies are declared and resolved with `uv` (e.g. `pyproject.toml` + `uv.lock`);
   `pip install`/`python -m venv` workflows MUST NOT be used.
-- Every Python script or module is run via `uv run python ...` (e.g.
-  `uv run python main.py`, `uv run pytest`), so the pinned environment is always used.
+- Every Python script or module is run via `uv run ...` (e.g. `uv run ds-agent-loop`,
+  `uv run python -m ds_agent_loop.main`, `uv run python entrypoint/run.py`,
+  `uv run pytest`), so the pinned environment is always used.
 
 Rationale: A single, reproducible toolchain keeps the toy repo's environment consistent
 and hackable without manual virtualenv bookkeeping.
@@ -214,4 +222,4 @@ for reviewing whether changes keep the project within its intended toy scope.
 - When a change conflicts with a principle, either the change is revised or the
   principle is formally amended first — silent deviations are not permitted.
 
-**Version**: 1.2.0 | **Ratified**: 2026-06-13 | **Last Amended**: 2026-06-13
+**Version**: 1.3.0 | **Ratified**: 2026-06-13 | **Last Amended**: 2026-06-13
