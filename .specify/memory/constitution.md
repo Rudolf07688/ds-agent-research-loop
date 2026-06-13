@@ -1,8 +1,14 @@
 <!--
 SYNC IMPACT REPORT
 ==================
-Version change: 5.1.0 → 5.2.0
-Bump rationale (5.2.0): MINOR — adds binding persistence guidance: the Postgres schema MUST be
+Version change: 5.2.0 → 5.3.0
+Bump rationale (5.3.0): MINOR — expands Principle VII (Progress Communicated via notes/) with a
+  binding presentation constraint: every generated HTML report/snapshot MUST adopt the established
+  dark color scheme currently used in notes/progress.html (documented inline as an explicit palette
+  so the canonical reference is recorded). This is additive guidance — it standardizes the look of an
+  artifact the principle already requires; no principle is removed, redefined, or rescoped.
+
+Prior bump rationale (5.1.0 → 5.2.0): MINOR — adds binding persistence guidance: the Postgres schema MUST be
   managed with Alembic migrations (versioned, reviewed, applied deterministically) rather than ad-hoc
   DDL or a silent create_all in the operational path (amends Principle IV, the Scope persistence
   constraint, and the Development Workflow). Also registers
@@ -68,6 +74,13 @@ Templates / docs requiring review:
      structured logging persisted to Postgres — verify against Principles X & XIII)
   ⚠ README.md / .env.example (document the benchmark, the three memory regimes, the compaction
      artifact, and the replay/analysis workflow as those features land)
+
+Reviewed for v5.3.0 (HTML report color scheme):
+  ✅ .specify/memory/constitution.md (Principle VII now mandates the notes/progress.html dark color
+     scheme for generated HTML reports; the canonical palette is recorded inline)
+  ✅ notes/progress.html (registered as the canonical color-scheme reference for HTML reports)
+  ✅ .specify/templates/{plan,spec,tasks}-template.md (generic, constitution-driven — no change;
+     future HTML-report tasks evaluate the color-scheme constraint against v5.3.0)
 
 Reviewed for v5.2.0 (Alembic + reference doc):
   ✅ .specify/memory/constitution.md (Alembic schema-migration mandate added to Principle IV, the
@@ -253,10 +266,25 @@ Progress MUST be communicated back to the user through the `notes/` directory.
   current progress MUST be compiled into an HTML file under `notes/`.
 - The `notes/` directory MUST be kept up to date more generally wherever it helps communicate
   status, decisions, research direction, or context back to the user.
+- Every generated HTML report/snapshot MUST use the established dark color scheme currently used in
+  `notes/progress.html`, which is the canonical reference. Reports stay visually consistent rather
+  than each inventing its own palette. The palette is (hex):
+  - Page background `#1a1e2e`; body text `#d4dce8`.
+  - Headings: `h1` `#e8edf7`; section headings (`h2`) `#7ec8a0` with a `#2e3550` bottom border.
+  - Links `#79b8ff`.
+  - Inline `code`: background `#252b3b`, text `#a8d8ff`.
+  - Tables: header background `#252b3b` with `#b0c4de` text; cell borders `#2e3550`; row hover
+    background `#1f2437`.
+  - Success / "done" emphasis `#6ee7a0` (alt `#6ee7a0`/`#7ec8a0` green family).
+  - Callout / note box: background `#1f2840`, border `#3a4a6b`, text `#b8c8e0`.
+  Minor additions consistent with this dark palette are permitted; switching to a light theme or an
+  unrelated palette is not. When the canonical scheme in `notes/progress.html` evolves, that file
+  remains the source of truth.
 
 Rationale: `notes/` is the shared, human-readable channel for status and the staging ground for
 the eventual thesis (Principle XI). Snapshotting progress at natural boundaries keeps the user
-informed and makes the work easy to resume.
+informed and makes the work easy to resume. A single, consistent color scheme keeps the growing set
+of HTML reports coherent and immediately recognizable instead of visually fragmented.
 
 ### VIII. Typed Models & Centralized Settings (Pydantic)
 
@@ -487,7 +515,8 @@ trajectory and threshold quantities is what keeps the eventual thesis honest and
   budgets, analysis plan) before being run, and every reported result MUST be replayable from
   persisted state (Principles IX, XI, XIV).
 - On finishing a section or pausing for a break, an HTML progress snapshot MUST be written to
-  `notes/`, and `notes/` MUST be kept current as the user-facing status channel (Principle VII).
+  `notes/` using the canonical dark color scheme of `notes/progress.html`, and `notes/` MUST be kept
+  current as the user-facing status channel (Principle VII).
 - Commit messages MUST NOT include a "Co-Authored-By: Claude" trailer or any equivalent AI
   co-author attribution.
 
@@ -520,4 +549,4 @@ project pursuing the Directional Research Memory thesis.
   structured compaction) — is a NON-binding REFERENCE that informs design but does NOT override these
   principles. Where the reference and the constitution diverge, the constitution governs.
 
-**Version**: 5.2.0 | **Ratified**: 2026-06-13 | **Last Amended**: 2026-06-13
+**Version**: 5.3.0 | **Ratified**: 2026-06-13 | **Last Amended**: 2026-06-13
