@@ -15,6 +15,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 from pydantic import ValidationError
+from scipy.stats import lognorm, norm, poisson
 
 from . import llm
 from .prompts import DataSpec, DeliveryRecord, Settings
@@ -31,6 +32,102 @@ TRAIN_FILE = "train.csv"
 VAL_FILE = "val.csv"
 TEST_FILE = "test.csv"
 SPLIT_FILES = {"train": TRAIN_FILE, "val": VAL_FILE, "test": TEST_FILE}
+
+# ---------------------------------------------------------------------------
+# Statistical structure for synthetic features (Gaussian copula)
+# ---------------------------------------------------------------------------
+# Features are drawn from a Gaussian copula: correlated latent normals are mapped
+# through each feature's realistic marginal (inverse-CDF / PIT). This gives both
+# realistic per-column shapes AND cross-feature dependencies, while the target stays
+# a fixed, readable function of the features (anchored synthetic, Principle V).
+#
+# Latent feature order for the copula correlation matrix:
+_COPULA_FEATURES = ["item_count", "distance_km", "traffic_level", "is_raining", "hour_of_day"]
+# Modest, readable dependencies (symmetric, positive-definite — verified):
+#   distance <-> item_count (bigger trips carry more items),
+#   traffic  <-> hour_of_day (congestion peaks at commute hours),
+#   traffic  <-> distance / rain (longer & wetter trips see worse traffic).
+_LATENT_CORR = np.array(
+    [
+        # item  dist  traf  rain  hour
+        [1.00, 0.45, 0.00, 0.00, 0.00],  # item_count
+        [0.45, 1.00, 0.30, 0.00, 0.20],  # distance_km
+        [0.00, 0.30, 1.00, 0.25, 0.50],  # traffic_level
+        [0.00, 0.00, 0.25, 1.00, 0.00],  # is_raining
+        [0.00, 0.20, 0.50, 0.00, 1.00],  # hour_of_day
+    ]
+)
+# Marginal-distribution parameters (single-sourced, readable):
+_ITEM_COUNT_LAMBDA = 2.0  # Poisson(lambda) + 1, clamped to [1, 10]
+_ITEM_COUNT_MAX = 10
+_DISTANCE_SIGMA = 0.6  # lognormal shape
+_DISTANCE_MEDIAN = 3.0  # lognormal scale (median km) — most trips short, long right tail
+_DISTANCE_MAX = 30.0
+_RAIN_PROB = 0.3  # P(is_raining)
+# Hour-of-day as a bimodal commute mixture (morning ~8h, evening ~18h).
+_HOUR_PEAKS = (8.0, 18.0)
+_HOUR_SD = 2.5
+_DEFAULT_TRAFFIC_WEIGHTS = (0.4, 0.4, 0.2)  # used when there are exactly 3 categories
+
+
+def _hour_pmf() -> np.ndarray:
+    """Discrete pmf over hours 0..23 as an equal mixture of two commute-peak normals."""
+
+    hours = np.arange(24)
+    dens = sum(np.exp(-0.5 * ((hours - p) / _HOUR_SD) ** 2) for p in _HOUR_PEAKS)
+    return dens / dens.sum()
+
+
+def _features_from_copula(
+    spec: DataSpec, n: int, rng: np.random.Generator
+) -> dict[str, np.ndarray]:
+    """Draw ``n`` correlated feature rows via a Gaussian copula + realistic marginals."""
+
+    z = rng.multivariate_normal(np.zeros(len(_COPULA_FEATURES)), _LATENT_CORR, size=n)
+    u = norm.cdf(z)  # column-wise correlated uniforms in (0, 1)
+    cols = {name: u[:, i] for i, name in enumerate(_COPULA_FEATURES)}
+
+    item_count = np.clip(
+        poisson.ppf(cols["item_count"], _ITEM_COUNT_LAMBDA).astype(int) + 1,
+        1,
+        _ITEM_COUNT_MAX,
+    )
+    distance_km = np.round(
+        np.clip(
+            lognorm.ppf(cols["distance_km"], _DISTANCE_SIGMA, scale=_DISTANCE_MEDIAN),
+            0.5,
+            _DISTANCE_MAX,
+        ),
+        2,
+    )
+
+    traffic_categories = list(spec.categories.get("traffic_level", ["low", "medium", "high"]))
+    if len(traffic_categories) == 3:
+        weights = np.array(_DEFAULT_TRAFFIC_WEIGHTS)
+    else:
+        weights = np.full(len(traffic_categories), 1.0 / len(traffic_categories))
+    thresholds = np.cumsum(weights)
+    traffic_idx = np.clip(
+        np.searchsorted(thresholds, cols["traffic_level"], side="right"),
+        0,
+        len(traffic_categories) - 1,
+    )
+    traffic_level = np.array(traffic_categories)[traffic_idx]
+
+    is_raining = cols["is_raining"] < _RAIN_PROB
+
+    hour_thresholds = np.cumsum(_hour_pmf())
+    hour_of_day = np.clip(
+        np.searchsorted(hour_thresholds, cols["hour_of_day"], side="right"), 0, 23
+    )
+
+    return {
+        "item_count": item_count.astype(int),
+        "distance_km": distance_km.astype(float),
+        "traffic_level": traffic_level,
+        "is_raining": is_raining,
+        "hour_of_day": hour_of_day.astype(int),
+    }
 
 
 class StateError(RuntimeError):
@@ -110,20 +207,23 @@ def load_data_spec(state_dir: Path = STATE_DIR) -> DataSpec:
 def generate_rows(spec: DataSpec, n: int, rng: np.random.Generator) -> pd.DataFrame:
     """Generate ``n`` rows in pure Python from the saved spec.
 
-    All feature ranges/categories come from the spec; the target is a fixed, readable
-    function of the features plus spec-controlled noise. Every row satisfies the spec.
+    Features are drawn from a Gaussian copula so they follow realistic marginal
+    distributions AND are correlated with one another (see ``_features_from_copula``),
+    rather than being independent uniforms. The target remains a fixed, readable function
+    of the features plus spec-controlled noise. Every row satisfies the spec.
     """
 
-    traffic_categories = spec.categories.get(
-        "traffic_level", ["low", "medium", "high"]
-    )
+    if n <= 0:
+        return pd.DataFrame(columns=FEATURE_COLUMNS + [TARGET_COLUMN])
+
     traffic_weights = {"low": 1.0, "medium": 1.5, "high": 2.2}
 
-    item_count = rng.integers(1, 6, size=n)
-    distance_km = np.round(rng.uniform(0.5, 15.0, size=n), 2)
-    traffic_level = rng.choice(traffic_categories, size=n)
-    is_raining = rng.random(size=n) < 0.3
-    hour_of_day = rng.integers(0, 24, size=n)
+    feats = _features_from_copula(spec, n, rng)
+    item_count = feats["item_count"]
+    distance_km = feats["distance_km"]
+    traffic_level = feats["traffic_level"]
+    is_raining = feats["is_raining"]
+    hour_of_day = feats["hour_of_day"]
 
     # Readable, spec-anchored relationship for delivery time (minutes).
     base = 8.0
