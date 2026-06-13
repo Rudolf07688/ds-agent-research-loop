@@ -1,5 +1,21 @@
 # Directional Research Memory — Autonomous Data-Scientist Agent
 
+## Quick Start
+
+```bash
+uv sync
+gcloud auth application-default login
+gcloud config set project research-se-gen-ai
+uv run ds-agent-loop                        # full run (N=10, patience=3)
+cat state/best_run.json                     # best model/score
+cat state/history.json                      # full iteration log
+```
+
+Re-runs skip the seed call and resume from saved state. Add `--iterations 5 --target-size 800` etc. to override defaults.
+
+---
+
+
 A research codebase studying one question: **does an LLM data-scientist agent get *worse* the more
 raw history you give it, and can a structured, compact "research memory" fix that?**
 

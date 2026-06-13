@@ -89,12 +89,14 @@ One `(dataset × regime × seed [× k × m])` unit; owns its budget, trajectory,
 | `cell_id` | `str` | deterministic from the factor tuple (idempotent key) |
 | `dataset_id`,`regime`,`seed`,`k`,`m` | factors | the manipulated + fixed factors |
 | `budget` | `int` | iterations (`N`) |
-| `status` | `CellStatus` enum | `pending` \| `running` \| `completed` \| `failed` |
+| `status` | `CellStatus` enum | `pending` \| `running` \| `completed` \| `context_limited` \| `failed` |
+| `last_iteration` | `int \| None` | iteration reached (for `context_limited`: where Condition B hit the context wall; remaining budget recorded as not-run) |
 | `error` | `str \| None` | recorded on failure without aborting siblings (FR-015) |
 | `repro` | `dict` | commit, settings snapshot, benchmark_version, split_ref (Principle IX) |
 | `created_ts`/`updated_ts` | `str` | lifecycle |
 
-**Resume rule:** a `completed` cell is never recomputed (SC-007); upserts keyed by `cell_id`.
+**Resume rule:** a `completed` cell is never recomputed (SC-007); `context_limited` is likewise
+terminal (re-running cannot fit more history, so it is not recomputed); upserts keyed by `cell_id`.
 
 ## OutcomeSummary  *(analysis output — Principle XIV; FR-019–021)*
 
@@ -103,7 +105,7 @@ Per-cell and per-condition aggregates plus paired comparisons.
 | field | type | notes |
 |-------|------|-------|
 | `primary_outcome` | `float` | best test score under budget |
-| `secondary` | `dict` | AUC-improvement, improving-steps, iters-to-90%, repetition-rate, search-diversity, token-growth |
+| `secondary` | `dict` | AUC-improvement, improving-steps, iters-to-90%, best-so-far-regret (`Σ_t (final_best − best_so_far_at_t)`; Principle XIV / FR-020), repetition-rate, search-diversity, token-growth |
 | `comparisons` | `list[PairedComparison]` | A-vs-B, B-vs-C, A-vs-C: effect, CI, p-value |
 | `threshold_curves` | `dict` | performance vs `k`, vs `m` (US5/FR-025) |
 

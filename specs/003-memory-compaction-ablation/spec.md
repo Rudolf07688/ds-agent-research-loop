@@ -39,6 +39,21 @@ recency (A vs C).
   change — is now the sanctioned local-infra orchestration. Postgres is an **addition** to, not
   a replacement for, inspectable state: contents MUST remain exportable to human-readable
   JSON/CSV (see updated FR-014 / FR-014a and Assumptions).
+- Q: When all-raw (Condition B) makes the prompt exceed the model's context window, what does the
+  cell do? → A: **Stop and record as context-limited** — halt the cell at that iteration, mark it
+  context-limited, record the remaining budget as not-run; this "wall" is recorded as H1 evidence
+  (never silently truncated). (FR-003, Edge Cases, SC-006/SC-008)
+- Q: At a Condition-C compaction trigger with fewer than `m` source experiments, what is the
+  deterministic rule? → A: **Compact over whatever records exist** (deterministic, logged); Condition
+  C is well-defined from the first trigger onward. (FR-006, Edge Cases)
+- Q: Constitution XIV requires a regret-style measure of wasted search, absent from FR-020 — which?
+  → A: **Best-so-far regret curve**: `Σ_t (final_best − best_so_far_at_t)` (area between the
+  running-best and final-best trajectory); repetition rate already covers repeated failed ideas.
+  (FR-020, SC-008)
+- Q: Constitution XIV requires the study to attempt to locate the phase transition; today that lives
+  only in optional US5 — is US5 in this feature's Definition of Done? → A: **Yes, US5 is required**
+  (promoted): the `k`/`m` threshold sweep and its curves are mandatory for DoD; FR-025 becomes a MUST.
+  (US5, FR-025)
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -167,15 +182,17 @@ confidence intervals for the three planned comparisons.
 
 ---
 
-### User Story 5 - Threshold sweep over k and m (Priority: P3)
+### User Story 5 - Threshold sweep over k and m (Priority: P3 — required for DoD)
 
 As a researcher, I can vary the recent-window size `k` and the compaction interval `m` across a
 configured grid to produce threshold curves, so the study can claim *where* raw history begins to
 hurt and whether compaction shifts or removes that decline.
 
-**Why this priority**: This is the "strongest version" extension. It strengthens the contribution
-from a single A/B/C point estimate to a threshold curve, but the study is already valid and
-publishable-in-shape without it, so it is the lowest priority.
+**Why this priority**: This is the "strongest version" extension and is sequenced last (built after
+US1–US4), but it is **required for this feature's Definition of Done**: constitution Principle XIV
+obligates the study to *attempt to locate the phase transition* where raw history begins to hurt,
+and the `k`/`m` threshold sweep is the mechanism that does so. It is implemented last but is not
+optional.
 
 **Independent Test**: Configure a grid of `k` and `m` values; run the sweep; confirm results are
 recorded per (k, m) combination and that threshold curves (performance vs `k`, performance vs `m`)
@@ -196,17 +213,19 @@ can be produced from them.
   all conditions must show whatever exists without padding or error, and Condition C must behave
   identically to recent-only until the first compaction trigger.
 - **Compaction before enough data**: if a compaction trigger fires before `m` experiments exist,
-  the system must either skip compaction until enough source experiments exist or compact over
-  whatever exists — the chosen rule must be deterministic and logged.
+  the system MUST **compact over whatever source records exist at that point** (deterministic and
+  logged), so Condition C is well-defined from its first trigger onward rather than skipping.
 - **LLM proposes an out-of-allowlist or invalid config**: handled by the existing bounded-agency
   validation — the proposal is rejected/validated before execution and the rejection is logged;
   memory strategy must not change this behavior.
 - **A single cell crashes** (training error, LLM/Vertex error, malformed output): the cell is
   recorded as failed with its error; the sweep does not abort other cells.
 - **Token budget / context limit exceeded in Condition B**: when accumulated raw history makes a
-  prompt exceed the model's context limit, the event must be recorded as an outcome of the
-  condition (it is itself evidence for H1), not silently truncated; the chosen handling must be
-  explicit and logged.
+  prompt exceed the model's context limit, the cell MUST **stop at that iteration, be marked
+  context-limited, and record its remaining budget as not-run** — the event is recorded as an
+  outcome of the condition (it is itself evidence for H1), never silently truncated. Comparisons
+  against the paired recent-only/compacted cells remain valid up to the iteration at which Condition
+  B hit the wall.
 - **Reproducibility**: re-running the same (dataset × condition × seed × k × m) cell must yield the
   same executed configs and metrics given the fixed seed policy, except for irreducible LLM
   non-determinism, which is why multiple seeds are run and reported.
@@ -292,9 +311,12 @@ can be produced from them.
   the fixed experiment budget — per condition and dataset.
 - **FR-020**: The analysis MUST compute the secondary outcomes: best validation score by
   iteration, area under the improvement curve, number of improving steps, iterations to reach 90%
-  of final best score, repetition rate (semantically similar experiments repeated after failure),
-  search diversity (distinct model families / transformation types tried), and prompt token count
-  per decision.
+  of final best score, the **best-so-far regret curve** (`Σ_t (final_best − best_so_far_at_t)`, the
+  area between the running-best and final-best trajectory — the regret-style measure of wasted
+  search required by constitution Principle XIV), repetition rate (semantically similar experiments
+  repeated after failure), search diversity (distinct model families / transformation types tried),
+  and prompt token count per decision. All trajectory measures are computed metric-direction-aware
+  (FR-023).
 - **FR-021**: The analysis MUST perform per-dataset paired comparisons for A-vs-B, B-vs-C, and
   A-vs-C using a paired significance test (Wilcoxon signed-rank or paired-t) and MUST report
   bootstrap confidence intervals for the effect sizes.
@@ -306,14 +328,15 @@ can be produced from them.
   that regression (lower-is-better) and classification (higher-is-better) datasets aggregate
   correctly.
 
-**Optional / strongest-version extensions**
+**Extensions**
 
-- **FR-024**: The system SHOULD support an optional token-threshold compaction trigger (compact
-  when estimated memory tokens exceed threshold `t`) as a secondary mode alternative to the fixed
-  cadence.
-- **FR-025**: The system SHOULD support a configurable grid over recent-window `k` and compaction
-  interval `m` to produce threshold curves, recording each (k, m) combination as a distinct,
-  comparable cell.
+- **FR-024** (optional): The system SHOULD support an optional token-threshold compaction trigger
+  (compact when estimated memory tokens exceed threshold `t`) as a secondary mode alternative to the
+  fixed cadence.
+- **FR-025** (required for DoD): The system MUST support a configurable grid over recent-window `k`
+  and compaction interval `m`, recording each (k, m) combination as a distinct, comparable cell, and
+  the analysis MUST produce the resulting threshold curves — this is how the study attempts to locate
+  the phase transition required by constitution Principle XIV.
 
 ### Key Entities *(include if feature involves data)*
 
