@@ -33,10 +33,10 @@ Single flat project at repo root: modules `llm.py`, `data_gen.py`, `train.py`,
 
 **Purpose**: Project initialization and structure
 
-- [ ] T001 Create the flat project structure (empty modules `llm.py`, `data_gen.py`, `train.py`, `history.py`, `prompts.py`, `main.py`; dirs `state/`, `outputs/`, `tests/`) per plan.md
-- [ ] T002 Initialize the uv project: create `pyproject.toml` (Python 3.11+) and add deps via `uv add` — scikit-learn, pandas, numpy, pydantic, pydantic-settings, python-dotenv, the LLM SDK, and pytest (dev); generate `uv.lock`
-- [ ] T003 [P] Create `.env.example` documenting LLM API key + model name variables
-- [ ] T004 [P] Create initial `README.md` with uv-based setup/run instructions (`uv sync`, `uv run python main.py`)
+- [X] T001 Create the flat project structure (empty modules `llm.py`, `data_gen.py`, `train.py`, `history.py`, `prompts.py`, `main.py`; dirs `state/`, `outputs/`, `tests/`) per plan.md
+- [X] T002 Initialize the uv project: create `pyproject.toml` (Python 3.11+) and add deps via `uv add` — scikit-learn, pandas, numpy, pydantic, pydantic-settings, python-dotenv, the LLM SDK, and pytest (dev); generate `uv.lock`
+- [X] T003 [P] Create `.env.example` documenting LLM API key + model name variables
+- [X] T004 [P] Create initial `README.md` with uv-based setup/run instructions (`uv sync`, `uv run python main.py`)
 
 ---
 
@@ -46,10 +46,10 @@ Single flat project at repo root: modules `llm.py`, `data_gen.py`, `train.py`,
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete
 
-- [ ] T005 [P] Define the structured entities as Pydantic models (DataSpec, DeliveryRecord, NextStepDecision; matching `contracts/seed_generation.schema.json` and `contracts/next_step.schema.json`) plus the prompt templates in `prompts.py` (Principle VIII)
-- [ ] T005a [P] Define the centralized `pydantic-settings` Settings object (RunConfig: n_iterations, patience, target_size, primary_metric, llm_model, llm_api_key) loading from `.env` in `prompts.py` or a small `config.py`-style block referenced by other modules (Principle VIII)
-- [ ] T006 Implement the async LLM client base + a generic `async` structured-JSON request helper (asyncio for the I/O-bound call) that validates responses into the Pydantic models (reads model/key from the Settings object) in `llm.py` (FR-018)
-- [ ] T007 [P] Define the model allowlist constant and the feature/target column constants in `train.py`
+- [X] T005 [P] Define the structured entities as Pydantic models (DataSpec, DeliveryRecord, NextStepDecision; matching `contracts/seed_generation.schema.json` and `contracts/next_step.schema.json`) plus the prompt templates in `prompts.py` (Principle VIII)
+- [X] T005a [P] Define the centralized `pydantic-settings` Settings object (RunConfig: n_iterations, patience, target_size, primary_metric, llm_model, llm_api_key) loading from `.env` in `prompts.py` or a small `config.py`-style block referenced by other modules (Principle VIII)
+- [X] T006 Implement the async LLM client base + a generic `async` structured-JSON request helper (asyncio for the I/O-bound call) that validates responses into the Pydantic models (reads model/key from the Settings object) in `llm.py` (FR-018)
+- [X] T007 [P] Define the model allowlist constant and the feature/target column constants in `train.py`
 
 **Checkpoint**: Pydantic models, Settings, LLM helper, and allowlist exist — stories can begin
 
@@ -65,13 +65,13 @@ LLM call and persist both; reuse existing state on later runs.
 
 ### Tests for User Story 1
 
-- [ ] T008 [P] [US1] Unit test: seed/spec generation is skipped when valid `state/seed_rows.json` + `state/data_spec.json` already exist (no LLM call), in `tests/test_data_gen.py`
+- [X] T008 [P] [US1] Unit test: seed/spec generation is skipped when valid `state/seed_rows.json` + `state/data_spec.json` already exist (no LLM call), in `tests/test_data_gen.py`
 
 ### Implementation for User Story 1
 
-- [ ] T009 [US1] Implement the seed-generation call (request `seed_rows` + `data_spec` using the seed schema) in `llm.py`
-- [ ] T010 [US1] Validate seed-generation output against the schema and reject malformed/incomplete output in `llm.py`
-- [ ] T011 [US1] Implement seed bootstrap: persist `state/seed_rows.json` and `state/data_spec.json`, and skip generation when valid state already exists, in `data_gen.py`
+- [X] T009 [US1] Implement the seed-generation call (request `seed_rows` + `data_spec` using the seed schema) in `llm.py`
+- [X] T010 [US1] Validate seed-generation output against the schema and reject malformed/incomplete output in `llm.py`
+- [X] T011 [US1] Implement seed bootstrap: persist `state/seed_rows.json` and `state/data_spec.json`, and skip generation when valid state already exists, in `data_gen.py`
 
 **Checkpoint**: Seed bootstrap works and is resumable
 
@@ -87,12 +87,12 @@ LLM call and persist both; reuse existing state on later runs.
 
 ### Tests for User Story 2
 
-- [ ] T012 [P] [US2] Unit test: expansion derives rows solely from the saved `data_spec` (no LLM call) and every row satisfies the spec's ranges/categories, in `tests/test_data_gen.py`
+- [X] T012 [P] [US2] Unit test: expansion derives rows solely from the saved `data_spec` (no LLM call) and every row satisfies the spec's ranges/categories, in `tests/test_data_gen.py`
 
 ### Implementation for User Story 2
 
-- [ ] T013 [US2] Implement local row generation from the saved `data_spec` (features, rules, categories, noise_level) in `data_gen.py`
-- [ ] T014 [US2] Implement dataset expansion to a target size and persist `state/dataset.csv`, always anchored to the original saved spec (no regeneration), in `data_gen.py`
+- [X] T013 [US2] Implement local row generation from the saved `data_spec` (features, rules, categories, noise_level) in `data_gen.py`
+- [X] T014 [US2] Implement dataset expansion to a target size and persist `state/dataset.csv`, always anchored to the original saved spec (no regeneration), in `data_gen.py`
 
 **Checkpoint**: Dataset grows locally and cheaply from the fixed spec
 
@@ -108,16 +108,16 @@ entry is appended and `best_run.json` updates only when RMSE improves.
 
 ### Tests for User Story 3
 
-- [ ] T015 [P] [US3] Unit test: model allowlist + hyperparameter validation rejects out-of-allowlist models and invalid hyperparameters before training, in `tests/test_train.py`
-- [ ] T016 [P] [US3] Unit test: history append records all required fields and best-run selection updates only on RMSE improvement, in `tests/test_history.py`
+- [X] T015 [P] [US3] Unit test: model allowlist + hyperparameter validation rejects out-of-allowlist models and invalid hyperparameters before training, in `tests/test_train.py`
+- [X] T016 [P] [US3] Unit test: history append records all required fields and best-run selection updates only on RMSE improvement, in `tests/test_history.py`
 
 ### Implementation for User Story 3
 
-- [ ] T017 [US3] Implement feature prep and estimator construction from an allowlisted model name + validated hyperparameters in `train.py`
-- [ ] T018 [US3] Implement hyperparameter validation that rejects invalid values before any training in `train.py`
-- [ ] T019 [US3] Implement 5-fold cross-validation scoring (fixed seed; mean RMSE primary, optional R²/MAE) in `train.py`
-- [ ] T020 [US3] Implement history append (iteration, dataset_size, model_name, hyperparameters, metrics, rationale, timestamp) writing to `state/history.json` in `history.py`
-- [ ] T021 [US3] Implement best-run tracking that updates `state/best_run.json` only when mean RMSE improves in `history.py`
+- [X] T017 [US3] Implement feature prep and estimator construction from an allowlisted model name + validated hyperparameters in `train.py`
+- [X] T018 [US3] Implement hyperparameter validation that rejects invalid values before any training in `train.py`
+- [X] T019 [US3] Implement 5-fold cross-validation scoring (fixed seed; mean RMSE primary, optional R²/MAE) in `train.py`
+- [X] T020 [US3] Implement history append (iteration, dataset_size, model_name, hyperparameters, metrics, rationale, timestamp) writing to `state/history.json` in `history.py`
+- [X] T021 [US3] Implement best-run tracking that updates `state/best_run.json` only when mean RMSE improves in `history.py`
 
 **Checkpoint**: A single iteration can train, score, and be recorded end-to-end
 
@@ -134,13 +134,13 @@ retains the prior model.
 
 ### Tests for User Story 4
 
-- [ ] T022 [P] [US4] Unit test: a rejected proposal (bad action/model/hyperparameters) is refused and the loop skips it while retaining the prior model (FR-016a), in `tests/test_loop.py`
+- [X] T022 [P] [US4] Unit test: a rejected proposal (bad action/model/hyperparameters) is refused and the loop skips it while retaining the prior model (FR-016a), in `tests/test_loop.py`
 
 ### Implementation for User Story 4
 
-- [ ] T023 [US4] Implement the next-step call (reason over `state/history.json`, return a `NextStepDecision` via the next-step schema) in `llm.py`
-- [ ] T024 [US4] Implement decision validation (action enum, model on allowlist, hyperparameters valid; reject any non-conforming or code-bearing content, never execute it) in `train.py`
-- [ ] T025 [US4] Implement rejection handling: on an invalid decision, skip the proposal, retain the current/previous model, and record the rejection in history, in `history.py`
+- [X] T023 [US4] Implement the next-step call (reason over `state/history.json`, return a `NextStepDecision` via the next-step schema) in `llm.py`
+- [X] T024 [US4] Implement decision validation (action enum, model on allowlist, hyperparameters valid; reject any non-conforming or code-bearing content, never execute it) in `train.py`
+- [X] T025 [US4] Implement rejection handling: on an invalid decision, skip the proposal, retain the current/previous model, and record the rejection in history, in `history.py`
 
 **Checkpoint**: The LLM can steer the experiment within safe, validated bounds
 
@@ -157,14 +157,14 @@ loop stops at N or on the no-improvement condition; state reflects all iteration
 
 ### Tests for User Story 5
 
-- [ ] T026 [P] [US5] Unit test: stop conditions — loop stops after N iterations and stops early after k consecutive non-improving rounds, in `tests/test_loop.py`
+- [X] T026 [P] [US5] Unit test: stop conditions — loop stops after N iterations and stops early after k consecutive non-improving rounds, in `tests/test_loop.py`
 
 ### Implementation for User Story 5
 
-- [ ] T027 [US5] Implement CLI argument parsing (`--iterations`, `--patience`, `--target-size`, `--metric`) and ensure `state/`/`outputs/` exist, with file-path constants, in `main.py`
-- [ ] T028 [US5] Implement the loop orchestration (seed-if-missing → expand → train/score → ask next-step → record), awaiting the async LLM calls (e.g. via `asyncio.run`) and using `LinearRegression` as the first-iteration baseline (FR-005a), in `main.py`
-- [ ] T029 [US5] Implement stop logic: terminate after N iterations or after `--patience` consecutive rounds without RMSE improvement, in `main.py`
-- [ ] T030 [US5] Write a human-readable `outputs/run_summary.txt` summarizing the run outcome in `main.py`
+- [X] T027 [US5] Implement CLI argument parsing (`--iterations`, `--patience`, `--target-size`, `--metric`) and ensure `state/`/`outputs/` exist, with file-path constants, in `main.py`
+- [X] T028 [US5] Implement the loop orchestration (seed-if-missing → expand → train/score → ask next-step → record), awaiting the async LLM calls (e.g. via `asyncio.run`) and using `LinearRegression` as the first-iteration baseline (FR-005a), in `main.py`
+- [X] T029 [US5] Implement stop logic: terminate after N iterations or after `--patience` consecutive rounds without RMSE improvement, in `main.py`
+- [X] T030 [US5] Write a human-readable `outputs/run_summary.txt` summarizing the run outcome in `main.py`
 
 **Checkpoint**: A full `uv run python main.py` toy run completes and self-terminates
 
@@ -174,9 +174,9 @@ loop stops at N or on the no-improvement condition; state reflects all iteration
 
 **Purpose**: Validation, docs, and the user-facing progress channel
 
-- [ ] T031 [P] Finalize `README.md` and `.env.example` (uv workflow, run/inspect/test commands)
-- [ ] T032 Run quickstart validation end-to-end: `uv run python main.py` then `uv run pytest`, confirming success criteria SC-001…SC-007
-- [ ] T033 [P] Compile current progress into an HTML snapshot under `notes/` (Constitution Principle VII)
+- [X] T031 [P] Finalize `README.md` and `.env.example` (uv workflow, run/inspect/test commands)
+- [X] T032 Run quickstart validation end-to-end: `uv run python main.py` then `uv run pytest`, confirming success criteria SC-001…SC-007
+- [X] T033 [P] Compile current progress into an HTML snapshot under `notes/` (Constitution Principle VII)
 
 ---
 

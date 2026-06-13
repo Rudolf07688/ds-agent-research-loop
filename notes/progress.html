@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AutoDS Loop — Implementation Progress</title>
+<style>
+  body { font: 15px/1.55 -apple-system, Segoe UI, Roboto, sans-serif; margin: 2rem auto; max-width: 880px; color: #1c2230; padding: 0 1rem; }
+  h1 { font-size: 1.5rem; } h2 { font-size: 1.15rem; margin-top: 1.8rem; border-bottom: 1px solid #e3e7ee; padding-bottom: .3rem; }
+  code { background: #f3f5f9; padding: .1rem .35rem; border-radius: 4px; }
+  table { border-collapse: collapse; width: 100%; margin: .6rem 0; }
+  th, td { text-align: left; padding: .4rem .6rem; border-bottom: 1px solid #e8ebf1; font-size: .92rem; }
+  .done { color: #137a37; font-weight: 600; }
+  .note { background: #fff8e6; border: 1px solid #f0e0a8; padding: .7rem 1rem; border-radius: 6px; }
+  ul { padding-left: 1.2rem; }
+</style>
+</head>
+<body>
+<h1>LLM Autonomous Data Scientist (Toy) — Implementation Progress</h1>
+<p>Branch <code>001-autods-loop</code>. All 33 tasks (T001–T033) implemented; the offline
+test suite (20 tests) passes.</p>
+
+<h2>Phase status</h2>
+<table>
+  <tr><th>Phase</th><th>Tasks</th><th>Status</th></tr>
+  <tr><td>1 · Setup</td><td>T001–T004</td><td class="done">complete</td></tr>
+  <tr><td>2 · Foundational</td><td>T005–T007</td><td class="done">complete</td></tr>
+  <tr><td>3 · US1 Seed bootstrap</td><td>T008–T011</td><td class="done">complete</td></tr>
+  <tr><td>4 · US2 Local expansion</td><td>T012–T014</td><td class="done">complete</td></tr>
+  <tr><td>5 · US3 Train / score / track</td><td>T015–T021</td><td class="done">complete</td></tr>
+  <tr><td>6 · US4 Next-step decision</td><td>T022–T025</td><td class="done">complete</td></tr>
+  <tr><td>7 · US5 Full loop</td><td>T026–T030</td><td class="done">complete</td></tr>
+  <tr><td>8 · Polish</td><td>T031–T033</td><td class="done">complete</td></tr>
+</table>
+
+<h2>What was built</h2>
+<ul>
+  <li><code>prompts.py</code> — Pydantic entities, the single <code>pydantic-settings</code>
+    Settings object, both LLM JSON schemas, and prompt text (the centralized config home).</li>
+  <li><code>llm.py</code> — async OpenAI-compatible client + generic schema-constrained,
+    Pydantic-validated request helper; the two sanctioned calls (seed, next-step).</li>
+  <li><code>data_gen.py</code> — seed bootstrap with checkpoint resume; local dataset
+    expansion anchored to the saved spec (no LLM, no spec regeneration).</li>
+  <li><code>train.py</code> — model allowlist, hyperparameter + decision validation
+    (the safety boundary), one-hot pipeline, 5-fold CV scoring (RMSE/R²/MAE).</li>
+  <li><code>history.py</code> — append-only run history, best-run tracking (RMSE-only
+    improvement), rejection recording that retains the prior model.</li>
+  <li><code>main.py</code> — CLI + orchestration: seed → expand → score → next-step →
+    record; baseline LinearRegression first; stop at N or after <em>patience</em> rounds.</li>
+  <li><code>tests/</code> — 20 offline pytest units across data-gen, train, history, loop.</li>
+</ul>
+
+<h2>Key decisions</h2>
+<ul>
+  <li>Flat repo-root layout (replaced the generated <code>src/</code> package) and
+    <code>requires-python &gt;= 3.11</code>, per the plan and Constitution Principle I.</li>
+  <li>Settings + all Pydantic models live in <code>prompts.py</code> — honours the fixed
+    module list, avoids an unsanctioned <code>config.py</code> (open item C1).</li>
+  <li>Hyperparameter values are checked via scikit-learn's <code>_validate_params()</code>
+    so invalid values are rejected <em>before</em> training (1.9 validates at fit time).</li>
+  <li>Rejections carry the retained model's metrics (no <code>Infinity</code> in JSON),
+    keeping <code>history.json</code> standard and inspectable.</li>
+</ul>
+
+<h2>Verification</h2>
+<ul>
+  <li><code>uv run pytest</code> → 20 passed.</li>
+  <li>Full loop exercised end-to-end offline with a stubbed LLM: seed bootstrap, expansion,
+    LinearRegression baseline → RandomForest switch, an out-of-allowlist proposal rejected
+    (prior model retained), best-run tracking, and the run summary — covering the logic
+    behind SC-001…SC-007.</li>
+</ul>
+
+<p class="note"><strong>Live run pending credentials.</strong> A real
+<code>uv run python main.py</code> makes one live seed-generation LLM call and needs
+<code>LLM_API_KEY</code> + <code>LLM_MODEL</code> in <code>.env</code> (see
+<code>.env.example</code>). That live call was not executed here.</p>
+</body>
+</html>

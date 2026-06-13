@@ -1,17 +1,26 @@
 [project]
 name = "ds-agent-loop"
 version = "0.1.0"
-description = "Add your description here"
+description = "LLM Autonomous Data Scientist (Toy) Loop"
 readme = "README.md"
 authors = [
     { name = "Rudolf Luttich", email = "rudolf@spatialedge.ai" }
 ]
-requires-python = ">=3.14"
-dependencies = []
+requires-python = ">=3.11"
+dependencies = [
+    "scikit-learn>=1.4",
+    "pandas>=2.2",
+    "numpy>=1.26",
+    "pydantic>=2.7",
+    "pydantic-settings>=2.3",
+    "python-dotenv>=1.0",
+    "openai>=1.40",
+]
 
-[project.scripts]
-ds-agent-loop = "ds_agent_loop:main"
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+]
 
-[build-system]
-requires = ["uv_build>=0.11.7,<0.12.0"]
-build-backend = "uv_build"
+[tool.pytest.ini_options]
+testpaths = ["tests"]

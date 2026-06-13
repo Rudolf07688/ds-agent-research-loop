@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.venv/
+venv/
+dist/
+build/
+
+# Environment / secrets
+.env
+
+# Generated experiment state & outputs (runtime artifacts)
+state/*.json
+state/*.csv
+outputs/*.txt
+
+# Tooling / OS
+.pytest_cache/
+.DS_Store
+*.swp
+.idea/
+.vscode/
