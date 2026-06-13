@@ -163,6 +163,80 @@ def test_condition_c_generates_artifacts_at_cadence_with_lineage(tmp_path):
     assert max(first["source_record_ids"]) <= 5 and first["source_record_ids"] == [1, 2, 3, 4, 5]
 
 
+# --- trigger mode classification + cadence recording (FR-004/006, US1) ----------------
+
+
+def test_trigger_mode_fixed_at_exact_cadence():
+    assert compaction.trigger_mode_for(10, 10, source_count=10) == "fixed"
+    assert compaction.trigger_mode_for(20, 10, source_count=20) == "fixed"
+
+
+def test_trigger_mode_compact_over_what_exists_for_short_window():
+    # off-cadence fire (token threshold) over fewer than m records -> compact_over_what_exists
+    assert compaction.trigger_mode_for(3, 10, source_count=3) == "compact_over_what_exists"
+
+
+def test_trigger_mode_token_threshold_off_cadence_with_full_window():
+    assert compaction.trigger_mode_for(13, 10, source_count=13) == "token_threshold"
+
+
+def test_degenerate_trajectory_still_yields_a_valid_artifact():
+    # An all-failed / empty window must compact to a VALID (not malformed) DirectionalMemory:
+    # empty belief lists plus a recorded open question are schema-conforming (FR-002, edge case).
+    degenerate = {
+        "confirmed_findings": [], "failed_directions": [], "promising_directions": [],
+        "best_known_configs": [], "unresolved_questions": ["nothing has worked yet"],
+        "next_step_recommendation": "try a different model family", "confidence": 0.0,
+        "rationale": "no signal in the trajectory so far",
+    }
+
+    async def degenerate_request(settings, *, source_records_json, dataset_summary, allowlist):
+        return DirectionalMemory.model_validate(degenerate)
+
+    d = B.get_descriptor("diabetes")
+    art = asyncio.run(
+        compaction.compact(Settings(_env_file=None), source_records=[], descriptor=d, request_fn=degenerate_request)
+    )
+    DirectionalMemory.model_validate(art)  # round-trips as a valid artifact
+    assert art["confidence"] == 0.0 and art["unresolved_questions"] == ["nothing has worked yet"]
+
+
+def test_condition_c_records_cadence_and_trigger_mode(tmp_path):
+    store = S.FakeStore()
+    d = B.get_descriptor("diabetes")
+    compactor, _ = _fake_compactor()
+    cell = asyncio.run(
+        main.run_cell(
+            d, MemoryRegime.compacted_recent, seed=0, k=3, m=5, iterations=12,
+            store=store, settings=Settings(_env_file=None), state_dir=tmp_path,
+            propose=_keep_rf(), compactor=compactor,
+        )
+    )
+    artifacts = store.get_artifacts(cell.cell_id)
+    assert [a["cadence"] for a in artifacts] == [5, 5]
+    assert [a["trigger_mode"] for a in artifacts] == ["fixed", "fixed"]
+
+
+def test_condition_c_malformed_operator_output_raises_and_persists_nothing(tmp_path):
+    # FR-002 / SC-002: a compactor that fails schema validation propagates LLMError and the run
+    # writes NO artifact (the artifact is never persisted past the failing trigger).
+    async def boom_compactor(settings, *, source_records, descriptor):
+        raise LLMError("operator emitted non-conforming JSON")
+
+    store = S.FakeStore()
+    d = B.get_descriptor("diabetes")
+    with pytest.raises(LLMError):
+        asyncio.run(
+            main.run_cell(
+                d, MemoryRegime.compacted_recent, seed=0, k=3, m=5, iterations=12,
+                store=store, settings=Settings(_env_file=None), state_dir=tmp_path,
+                propose=_keep_rf(), compactor=boom_compactor,
+            )
+        )
+    # the failing trigger persisted no artifact
+    assert store.get_artifacts("diabetes|compacted_recent|s0|k3|m5") == []
+
+
 def test_condition_c_agent_sees_artifact_plus_tail_k_after_trigger(tmp_path):
     store = S.FakeStore()
     d = B.get_descriptor("diabetes")

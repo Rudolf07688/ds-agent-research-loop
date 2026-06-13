@@ -12,7 +12,34 @@ import json
 from ds_agent_loop import benchmark as B
 from ds_agent_loop import main, provenance
 from ds_agent_loop import store as S
-from ds_agent_loop.prompts import MemoryRegime, NextAction, NextStepDecision, Settings
+from ds_agent_loop.prompts import (
+    CellStatus,
+    ExperimentCell,
+    ExperimentRecord,
+    MemoryRegime,
+    NextAction,
+    NextStepDecision,
+    Settings,
+)
+
+
+def _seed_history(store, cell_id: str, n: int) -> None:
+    for i in range(1, n + 1):
+        store.append_record(
+            ExperimentRecord(
+                iteration=i, dataset_size=100, model_name="RandomForestRegressor",
+                metrics={"rmse": 1.0}, rationale="r", timestamp="t",
+                cell_id=cell_id, seed=0, test_metrics={"rmse": 1.0},
+            )
+        )
+
+
+def _valid_artifact_dict() -> dict:
+    return {
+        "confirmed_findings": [], "failed_directions": [], "promising_directions": [],
+        "best_known_configs": [], "unresolved_questions": ["q"],
+        "next_step_recommendation": "go", "confidence": 0.5, "rationale": "r",
+    }
 
 
 def _settings() -> Settings:
@@ -146,3 +173,111 @@ def test_no_operational_create_all_or_adhoc_ddl_added(tmp_path):
     ).read_text()
     assert "create_all" not in src
     assert "CREATE TABLE" not in src.upper()
+
+
+# --- Feature 006 US3: deterministic, no-LLM compaction lineage audit --------
+
+
+def test_audit_compaction_faithful_cell_passes_with_zero_llm_calls():
+    """SC-003/004: a faithful cell audits clean with artifacts_checked correct and 0 LLM calls."""
+    store = S.FakeStore()
+    cid = "c|compacted_recent|s0|k3|m3"
+    _seed_history(store, cid, 9)
+    for trigger in (3, 6, 9):
+        store.save_artifact(
+            cell_id=cid, trigger_iteration=trigger, artifact=_valid_artifact_dict(),
+            source_record_ids=list(range(1, trigger + 1)), cadence=3, trigger_mode="fixed",
+        )
+    result = provenance.audit_compaction(store, cid)
+    assert result.ok
+    assert result.artifacts_checked == 3
+    assert result.llm_calls == 0
+    assert result.mismatches == []
+
+
+def test_audit_compaction_tolerates_null_cadence_pre006_artifact():
+    """FR-006b: a pre-006 artifact (NULL cadence) is still lineage-audited, not skipped."""
+    store = S.FakeStore()
+    cid = "c|compacted_recent|s0|k3|m3"
+    _seed_history(store, cid, 6)
+    # cadence/trigger_mode default to None — an artifact written before 006 recorded them.
+    store.save_artifact(
+        cell_id=cid, trigger_iteration=6, artifact=_valid_artifact_dict(),
+        source_record_ids=list(range(1, 7)),
+    )
+    art = store.get_artifacts(cid)[0]
+    assert art["cadence"] is None  # unrecorded
+    result = provenance.audit_compaction(store, cid)
+    assert result.ok and result.artifacts_checked == 1
+
+
+def test_audit_compaction_flags_future_record_leaked():
+    """FR-009: a recorded source record beyond the trigger fails loudly as future_record_leaked."""
+    store = S.FakeStore()
+    cid = "c|compacted_recent|s0|k3|m3"
+    _seed_history(store, cid, 9)
+    store.save_artifact(
+        cell_id=cid, trigger_iteration=3, artifact=_valid_artifact_dict(),
+        source_record_ids=[1, 2, 3, 7], cadence=3, trigger_mode="fixed",  # 7 > trigger 3
+    )
+    result = provenance.audit_compaction(store, cid)
+    assert not result.ok and len(result.mismatches) == 1
+    mm = result.mismatches[0]
+    assert mm.kind == "future_record_leaked" and mm.record_id == 7
+    assert mm.artifact_id == f"{cid}@3" and mm.trigger_iteration == 3
+
+
+def test_audit_compaction_flags_record_omitted():
+    """FR-009: a record at/before the trigger missing from the source set fails as record_omitted."""
+    store = S.FakeStore()
+    cid = "c|compacted_recent|s0|k3|m3"
+    _seed_history(store, cid, 6)
+    store.save_artifact(
+        cell_id=cid, trigger_iteration=6, artifact=_valid_artifact_dict(),
+        source_record_ids=[1, 2, 3, 5, 6], cadence=3, trigger_mode="fixed",  # dropped 4
+    )
+    result = provenance.audit_compaction(store, cid)
+    assert not result.ok
+    mm = result.mismatches[0]
+    assert mm.kind == "record_omitted" and mm.record_id == 4
+
+
+def test_audit_compaction_flags_history_disagreement():
+    """FR-009: a recorded id absent from persisted history fails as history_disagreement."""
+    store = S.FakeStore()
+    cid = "c|compacted_recent|s0|k3|m3"
+    _seed_history(store, cid, 3)
+    store.save_artifact(
+        cell_id=cid, trigger_iteration=3, artifact=_valid_artifact_dict(),
+        source_record_ids=[1, 2, 3, 99], cadence=3, trigger_mode="fixed",  # 99 never existed
+    )
+    result = provenance.audit_compaction(store, cid)
+    assert not result.ok
+    mm = result.mismatches[0]
+    assert mm.kind == "history_disagreement" and mm.record_id == 99
+
+
+def test_exported_artifacts_json_carries_complete_lineage(tmp_path):
+    """T017/Principle IV: exported artifacts.json includes cell, trigger, cadence, mode, sources."""
+    store = S.FakeStore()
+    B.materialize_suite(store, ["diabetes"])
+    cid = "c|compacted_recent|s0|k3|m3"
+    _seed_history(store, cid, 6)
+    store.save_artifact(
+        cell_id=cid, trigger_iteration=6, artifact=_valid_artifact_dict(),
+        source_record_ids=[1, 2, 3, 4, 5, 6], cadence=3, trigger_mode="fixed",
+    )
+    # the cell row must exist for export to enumerate it
+    store.upsert_cell(
+        ExperimentCell(
+            cell_id=cid, dataset_id="diabetes", regime=MemoryRegime.compacted_recent,
+            seed=0, k=3, m=3, budget=6, status=CellStatus.completed,
+        )
+    )
+    out = S.export(store, tmp_path / "exp")
+    exported = json.loads((out / S._safe_dir(cid) / "artifacts.json").read_text())
+    assert len(exported) == 1
+    art = exported[0]
+    assert art["cell_id"] == cid and art["trigger_iteration"] == 6
+    assert art["cadence"] == 3 and art["trigger_mode"] == "fixed"
+    assert art["source_record_ids"] == [1, 2, 3, 4, 5, 6]

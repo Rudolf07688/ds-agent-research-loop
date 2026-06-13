@@ -373,15 +373,24 @@ async def run_cell(
             )
         ):
             source = compaction.select_source(history_records, i)  # at/before trigger only (SC-005)
+            trigger_mode = compaction.trigger_mode_for(
+                i, m, len(source),
+                prompt_tokens=view.prompt_token_count,
+                token_threshold=compaction_token_threshold,
+            )
             artifact_dict = await compactor(
                 settings, source_records=source, descriptor=descriptor
             )
             store.save_artifact(
                 cell_id=cid, trigger_iteration=i, artifact=artifact_dict,
                 source_record_ids=[r.iteration for r in source],
+                cadence=m, trigger_mode=trigger_mode,
             )
             latest_artifact = store.latest_artifact(cid)
-            log.info("compaction_done", iteration=i, source_records=len(source))
+            log.info(
+                "compaction_done", iteration=i, source_records=len(source),
+                cadence=m, mode=trigger_mode,
+            )
 
     repro_stamp = {**repro_stamp, "stop_reason": stop_reason}
     cell = cell.model_copy(

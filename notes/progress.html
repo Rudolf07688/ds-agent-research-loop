@@ -26,7 +26,7 @@
 <body>
 <h1>Directional Research Memory — Progress Snapshot</h1>
 <p>Snapshot taken <code>2026-06-13</code>. Active branch
-<code>005-memory-regime-abstraction</code> — feature <strong>implemented and green</strong> (121 tests
+<code>006-compaction-operator</code> — feature <strong>implemented and green</strong> (140 tests
 passing, offline + Postgres). Thesis target: <em>Directional Research Memory for
 Autonomous Data-Scientist Agents — Compaction as Momentum in Experiment Space</em>.</p>
 
@@ -38,7 +38,7 @@ Autonomous Data-Scientist Agents — Compaction as Momentum in Experiment Space<
   <tr><td>003 · Memory-Compaction Ablation</td><td>First A/B/C ablation with Postgres provenance</td><td class="done">done</td></tr>
   <tr><td>004 · Benchmark Harness &amp; Suite</td><td>Versioned multi-dataset suite, frozen splits/budgets/action-space</td><td class="done">implemented</td></tr>
   <tr><td>005 · Memory-Regime Abstraction</td><td>One interface behind 3 regimes; exact-memory-shown provenance</td><td class="done">implemented</td></tr>
-  <tr><td>006 · Compaction Operator</td><td>Typed belief-schema artifact; outer compaction loop</td><td class="pending">planned</td></tr>
+  <tr><td>006 · Compaction Operator</td><td>Typed belief-schema artifact; outer compaction loop</td><td class="done">implemented</td></tr>
   <tr><td>007 · A/B/C Study</td><td>Multi-dataset, multi-seed pre-registered run</td><td class="pending">planned</td></tr>
   <tr><td>008–010 · Analysis / Theory / Whitepaper</td><td>Phase transition, momentum theory, thesis assembly</td><td class="pending">planned</td></tr>
 </table>
@@ -106,20 +106,51 @@ Autonomous Data-Scientist Agents — Compaction as Momentum in Experiment Space<
     fail-fast, resume guard (FR-012), and the all-raw context-limit halt.</li>
 </ul>
 
-<h2>Next step on resume</h2>
+<h2>What 006 delivers</h2>
 <ul>
-  <li>005 makes memory the auditable, replayable sole variable — proceed to <strong>006 · Compaction
-    Operator</strong> (the typed belief-schema artifact + outer compaction loop), which swaps in as
-    the compacted regime's artifact producer without changing the 005 memory seam.</li>
+  <li>The compaction operator is promoted from the opaque 003 producer to a <strong>sanctioned,
+    recorded-cadence, lineage-complete, audited</strong> operator (Principle XII) — a
+    <em>harden + verify + record-cadence</em> pass, not a rewrite. <code>compaction.py</code> keeps
+    its producer role; the no-future-leakage invariant in <code>select_source</code> is pinned and
+    tested.</li>
+  <li><strong>Recorded cadence:</strong> every artifact now persists the explicit <code>cadence</code>
+    <code>m</code> and the <code>trigger_mode</code> actually used (<code>fixed</code> /
+    <code>compact_over_what_exists</code> / <code>token_threshold</code>), via the additive, reversible
+    <strong>Alembic migration 0003</strong> (verified upgrade → downgrade → upgrade; pre-006 rows read
+    back <code>NULL</code> and are still audited).</li>
+  <li><strong>Lineage audit</strong> (<code>provenance.verify_artifact_lineage</code> /
+    <code>audit_compaction</code>): a deterministic, <em>no-LLM</em> verifier reconstructs the exact
+    set of records at/before each trigger from persisted history and asserts equality with the
+    recorded <code>source_record_ids</code> — failing loudly on <code>future_record_leaked</code>,
+    <code>record_omitted</code>, or <code>history_disagreement</code>, each naming the artifact +
+    record + iteration (Principles IX/X).</li>
+  <li>New <code>ds-agent-memory compaction &lt;cell_id&gt;</code> CLI beside <code>replay</code> /
+    <code>audit</code>; <code>artifacts.json</code> export carries the full lineage. The 005 memory
+    seam (<code>memory.build_view</code>), verified replay, and cross-regime audit are
+    <strong>byte-for-byte unchanged</strong> — confirmed by operator-backed compacted-cell tests.</li>
+  <li><strong>140 tests</strong> passing (was 121): cadence trigger points + recording, schema
+    fail-fast, no-future-leakage, compact-over-what-exists, degenerate-trajectory artifact, lineage
+    completeness + tamper (all three kinds), NULL-cadence tolerance, migration 0003 reversibility, and
+    the unchanged-seam replay/audit guarantee.</li>
 </ul>
 
-<p class="note"><strong>Uncommitted.</strong> The 005 spec/plan/tasks are committed; the
-<em>implementation</em> is not yet. The working tree holds the new module
-(<code>src/ds_agent_loop/provenance.py</code>), edits to <code>main.py</code> (regime-as-config,
-resume guard, fingerprint stamp), <code>prompts.py</code> (result models + <code>Settings.regime</code>),
-<code>store.py</code> (export fingerprint), <code>pyproject.toml</code> (<code>ds-agent-memory</code>
-script), new/updated tests (<code>tests/test_provenance.py</code>, <code>test_memory.py</code>,
-<code>test_loop.py</code>), docs (<code>README.md</code>) and this <code>notes/progress.html</code>.
-No new tables/migration. All 32 tasks in <code>tasks.md</code> are marked complete.</p>
+<h2>Next step on resume</h2>
+<ul>
+  <li>006 makes the compaction operator recorded, traceable, and auditable — proceed to <strong>007 ·
+    A/B/C Study</strong> (the multi-dataset, multi-seed pre-registered run across the three regimes).</li>
+</ul>
+
+<p class="note"><strong>Uncommitted.</strong> The 006 spec/plan/tasks are committed; the
+<em>implementation</em> is not yet. The working tree holds the additive migration
+(<code>alembic/versions/0003_compaction_cadence.py</code>), edits to <code>compaction.py</code>
+(pinned invariant + <code>trigger_mode_for</code>), <code>main.py</code> (records cadence + mode),
+<code>store.py</code> (<code>cadence</code>/<code>trigger_mode</code> columns + <code>save_artifact</code>),
+<code>provenance.py</code> (<code>verify_artifact_lineage</code> / <code>audit_compaction</code> +
+<code>compaction</code> CLI), <code>prompts.py</code> (<code>LineageMismatch</code> /
+<code>CompactionAuditResult</code>), new/updated tests
+(<code>tests/test_compaction.py</code>, <code>test_provenance.py</code>, <code>test_loop.py</code>,
+<code>test_store_integration.py</code>), docs (<code>README.md</code>) and this
+<code>notes/progress.html</code>. <code>memory.py</code> is untouched (005 seam preserved). All 29
+tasks in <code>tasks.md</code> are marked complete.</p>
 </body>
 </html>

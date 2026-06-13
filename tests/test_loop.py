@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 
 from ds_agent_loop import benchmark as B
-from ds_agent_loop import main
+from ds_agent_loop import main, provenance
 from ds_agent_loop import store as S
 from ds_agent_loop.prompts import (
     CellStatus,
@@ -232,3 +232,94 @@ def test_all_raw_context_limit_halts_and_records_context_limited(tmp_path):
     ))
     assert cell.status is CellStatus.context_limited
     assert cell.repro.get("stop_reason") == "context_limited"
+
+
+# ===========================================================================
+# Feature 006 — the compaction operator: recorded cadence, lineage, seam intact
+# ===========================================================================
+
+
+def _operator_compactor():
+    """A hermetic stand-in for the real operator that emits a valid DirectionalMemory dict."""
+    async def compactor(settings, *, source_records, descriptor):
+        return {
+            "confirmed_findings": [], "failed_directions": [], "promising_directions": [],
+            "best_known_configs": [], "unresolved_questions": ["q"],
+            "next_step_recommendation": "keep going", "confidence": 0.5,
+            "rationale": f"compacted {len(source_records)} records",
+        }
+    return compactor
+
+
+def _run_compacted(store, *, m, iterations, state_dir, k=3):
+    descriptor, split, _ = B.load_member(store, "diabetes")
+    return asyncio.run(
+        main.run_cell(
+            descriptor, MemoryRegime.compacted_recent, seed=0, k=k, m=m, iterations=iterations,
+            store=store, settings=_settings(), state_dir=state_dir, split=split,
+            propose=_propose("RandomForestRegressor"), compactor=_operator_compactor(),
+        )
+    )
+
+
+def test_compacted_cell_records_cadence_and_trigger_mode_on_every_artifact(tmp_path):
+    """FR-004/006a: every artifact records the cadence m and the trigger mode used."""
+    store = S.FakeStore()
+    B.materialize_suite(store, ["diabetes"])
+    cell = _run_compacted(store, m=3, iterations=9, state_dir=tmp_path)
+    artifacts = store.get_artifacts(cell.cell_id)
+    assert [a["trigger_iteration"] for a in artifacts] == [3, 6, 9]
+    assert all(a["cadence"] == 3 for a in artifacts)
+    assert all(a["trigger_mode"] == "fixed" for a in artifacts)
+
+
+def test_rerunning_a_completed_trigger_yields_exactly_one_artifact(tmp_path):
+    """SC-006: the (cell_id, trigger) upsert is idempotent — a resumed/re-run trigger never dups."""
+    store = S.FakeStore()
+    B.materialize_suite(store, ["diabetes"])
+    cell = _run_compacted(store, m=3, iterations=6, state_dir=tmp_path)
+    before = store.get_artifacts(cell.cell_id)
+    # Re-running a terminal cell is a no-op (resume guard) — artifacts remain exactly one per trigger.
+    _run_compacted(store, m=3, iterations=6, state_dir=tmp_path)
+    after = store.get_artifacts(cell.cell_id)
+    assert [a["trigger_iteration"] for a in after] == [a["trigger_iteration"] for a in before] == [3, 6]
+
+
+def test_artifact_lineage_is_exactly_records_at_or_before_trigger(tmp_path):
+    """FR-005/007, SC-003: each artifact's source set == records with iteration <= trigger, no later."""
+    store = S.FakeStore()
+    B.materialize_suite(store, ["diabetes"])
+    cell = _run_compacted(store, m=3, iterations=9, state_dir=tmp_path)
+    artifacts = store.get_artifacts(cell.cell_id)
+    for art in artifacts:
+        trigger = art["trigger_iteration"]
+        expected = [r.iteration for r in store.get_records(cell.cell_id) if r.iteration <= trigger]
+        assert sorted(art["source_record_ids"]) == expected
+        assert max(art["source_record_ids"]) <= trigger  # no future leakage
+    # ordered by trigger iteration
+    assert [a["trigger_iteration"] for a in artifacts] == sorted(a["trigger_iteration"] for a in artifacts)
+
+
+def test_operator_backed_compacted_cell_replays_unchanged(tmp_path):
+    """FR-012/SC-005: a compacted_recent cell produced by the 006 operator replays 100% (005 seam)."""
+    store = S.FakeStore()
+    B.materialize_suite(store, ["diabetes"])
+    cell = _run_compacted(store, m=3, iterations=9, state_dir=tmp_path)
+    result = provenance.verify_cell(store, cell.cell_id)
+    assert result.ok and result.matched == result.total == cell.last_iteration
+
+
+def test_operator_backed_compacted_cell_passes_cross_regime_audit(tmp_path):
+    """FR-012/SC-005: an operator-backed compacted cell vs a recent_only cell differs only in memory."""
+    store = S.FakeStore()
+    B.materialize_suite(store, ["diabetes"])
+    a = _run_compacted(store, m=3, iterations=6, state_dir=tmp_path)
+    descriptor, split, _ = B.load_member(store, "diabetes")
+    b = asyncio.run(main.run_cell(
+        descriptor, MemoryRegime.recent_only, seed=0, k=3, m=10, iterations=6,
+        store=store, settings=_settings(), state_dir=tmp_path, split=split,
+        propose=_propose("RandomForestRegressor"),
+    ))
+    result = provenance.audit_regimes(store, a.cell_id, b.cell_id)
+    assert result.ok and result.same_member_seed and result.fingerprint_equal
+    assert result.differing_factor is None

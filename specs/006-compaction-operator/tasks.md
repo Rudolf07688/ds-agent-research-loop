@@ -24,8 +24,8 @@ Single `src`-layout research library: `src/ds_agent_loop/`, `tests/`, `alembic/v
 
 **Purpose**: Confirm the workspace is ready; no new dependencies.
 
-- [ ] T001 Verify environment and current green baseline: run `uv sync` and `uv run pytest` from repo root, confirming the 121-test suite passes before any change.
-- [ ] T002 Re-read the seam-preservation constraint in `src/ds_agent_loop/memory.py` (`build_view` / `_render_artifact`) and note in a scratch comment that it MUST remain byte-for-byte unchanged (FR-011/013); no edits in this phase.
+- [X] T001 Verify environment and current green baseline: run `uv sync` and `uv run pytest` from repo root, confirming the 121-test suite passes before any change.
+- [X] T002 Re-read the seam-preservation constraint in `src/ds_agent_loop/memory.py` (`build_view` / `_render_artifact`) and note in a scratch comment that it MUST remain byte-for-byte unchanged (FR-011/013); no edits in this phase.
 
 ---
 
@@ -34,12 +34,12 @@ Single `src`-layout research library: `src/ds_agent_loop/`, `tests/`, `alembic/v
 **Purpose**: The persistence substrate that BOTH US1 (cadence recording) and US2 (lineage) build
 on. MUST complete before US1/US2.
 
-- [ ] T003 Add Alembic migration `alembic/versions/0003_compaction_cadence.py`: additive, nullable `cadence INTEGER` and `trigger_mode VARCHAR` columns on `compaction_artifacts`; `down_revision = "0002"`; reversible `upgrade()`/`downgrade()` (drop both columns). No data backfill (FR-006b).
-- [ ] T004 Extend the `compaction_artifacts` Table definition in `src/ds_agent_loop/store.py` with the `cadence` and `trigger_mode` columns so SQLAlchemy Core matches migration 0003.
-- [ ] T005 Update `Store.save_artifact` in `src/ds_agent_loop/store.py` to accept `cadence: int | None` and `trigger_mode: str` params, persist them, and include them in the `on_conflict_do_update` set_ (idempotent replace, FR-010).
-- [ ] T006 Mirror the new columns/params in `FakeStore.save_artifact` and `_artifacts` storage in `src/ds_agent_loop/store.py`, keeping `get_artifacts`/`latest_artifact` returning `cadence`/`trigger_mode` (read back `None` when unrecorded).
-- [ ] T007 Extend `export_cell` in `src/ds_agent_loop/store.py` so `artifacts.json` carries `cadence` and `trigger_mode` per artifact (inspectable export, Principle IV).
-- [ ] T008 [P] Add typed models to `src/ds_agent_loop/prompts.py`: `LineageMismatch` (artifact_id, trigger_iteration, kind, record_id, detail) and `CompactionAuditResult` (cell_id, artifacts_checked, ok, llm_calls, mismatches), per data-model.md.
+- [X] T003 Add Alembic migration `alembic/versions/0003_compaction_cadence.py`: additive, nullable `cadence INTEGER` and `trigger_mode VARCHAR` columns on `compaction_artifacts`; `down_revision = "0002"`; reversible `upgrade()`/`downgrade()` (drop both columns). No data backfill (FR-006b).
+- [X] T004 Extend the `compaction_artifacts` Table definition in `src/ds_agent_loop/store.py` with the `cadence` and `trigger_mode` columns so SQLAlchemy Core matches migration 0003.
+- [X] T005 Update `Store.save_artifact` in `src/ds_agent_loop/store.py` to accept `cadence: int | None` and `trigger_mode: str` params, persist them, and include them in the `on_conflict_do_update` set_ (idempotent replace, FR-010).
+- [X] T006 Mirror the new columns/params in `FakeStore.save_artifact` and `_artifacts` storage in `src/ds_agent_loop/store.py`, keeping `get_artifacts`/`latest_artifact` returning `cadence`/`trigger_mode` (read back `None` when unrecorded).
+- [X] T007 Extend `export_cell` in `src/ds_agent_loop/store.py` so `artifacts.json` carries `cadence` and `trigger_mode` per artifact (inspectable export, Principle IV).
+- [X] T008 [P] Add typed models to `src/ds_agent_loop/prompts.py`: `LineageMismatch` (artifact_id, trigger_iteration, kind, record_id, detail) and `CompactionAuditResult` (cell_id, artifacts_checked, ok, llm_calls, mismatches), per data-model.md.
 
 **Checkpoint**: schema + store + typed result models exist; suite still green (migration applied).
 
@@ -55,12 +55,12 @@ trigger mode used.
 trigger iterations, conform to the belief schema, malformed output is rejected, and `cadence` +
 `trigger_mode` are recorded.
 
-- [ ] T009 [P] [US1] Harden `select_source` in `src/ds_agent_loop/compaction.py`: pin the no-future-leakage invariant (only `iteration <= trigger_iteration`) with a clear docstring/assert; no behavior change.
-- [ ] T010 [US1] Update the outer compaction loop in `src/ds_agent_loop/main.py` (`run_cell`, near the existing `should_compact`/`select_source`/`save_artifact` block) to compute the `trigger_mode` actually used (`fixed` | `compact_over_what_exists` | `token_threshold`) and pass `cadence=m` and `trigger_mode` into `store.save_artifact`; extend the `compaction_done` log with `cadence` and `mode`.
-- [ ] T011 [US1] Make schema fail-fast explicit in `src/ds_agent_loop/compaction.py` `compact`: ensure non-conforming/malformed `request_fn` output propagates as `LLMError` and is never persisted (FR-002); add a guard/docstring.
-- [ ] T012 [P] [US1] Tests in `tests/test_compaction.py`: cadence trigger points (fires at every m-th, not between); no-future-leakage of `select_source`; compact-over-what-exists for a short window sets `trigger_mode=compact_over_what_exists`; degenerate (all-failed/empty) trajectory still yields a valid artifact (SC-001/006, edge cases).
-- [ ] T013 [P] [US1] Test in `tests/test_compaction.py`: malformed/non-conforming operator output (via injected hermetic `request_fn`) raises `LLMError` and persists no artifact (SC-002).
-- [ ] T014 [US1] Test in `tests/test_loop.py`: a `compacted_recent` cell run with cadence `m` records `cadence` and the correct `trigger_mode` on every artifact (FR-004/006a); re-running a trigger yields exactly one artifact (SC-006).
+- [X] T009 [P] [US1] Harden `select_source` in `src/ds_agent_loop/compaction.py`: pin the no-future-leakage invariant (only `iteration <= trigger_iteration`) with a clear docstring/assert; no behavior change.
+- [X] T010 [US1] Update the outer compaction loop in `src/ds_agent_loop/main.py` (`run_cell`, near the existing `should_compact`/`select_source`/`save_artifact` block) to compute the `trigger_mode` actually used (`fixed` | `compact_over_what_exists` | `token_threshold`) and pass `cadence=m` and `trigger_mode` into `store.save_artifact`; extend the `compaction_done` log with `cadence` and `mode`.
+- [X] T011 [US1] Make schema fail-fast explicit in `src/ds_agent_loop/compaction.py` `compact`: ensure non-conforming/malformed `request_fn` output propagates as `LLMError` and is never persisted (FR-002); add a guard/docstring.
+- [X] T012 [P] [US1] Tests in `tests/test_compaction.py`: cadence trigger points (fires at every m-th, not between); no-future-leakage of `select_source`; compact-over-what-exists for a short window sets `trigger_mode=compact_over_what_exists`; degenerate (all-failed/empty) trajectory still yields a valid artifact (SC-001/006, edge cases).
+- [X] T013 [P] [US1] Test in `tests/test_compaction.py`: malformed/non-conforming operator output (via injected hermetic `request_fn`) raises `LLMError` and persists no artifact (SC-002).
+- [X] T014 [US1] Test in `tests/test_loop.py`: a `compacted_recent` cell run with cadence `m` records `cadence` and the correct `trigger_mode` on every artifact (FR-004/006a); re-running a trigger yields exactly one artifact (SC-006).
 
 **Checkpoint**: artifacts generated, schema-validated, cadence + trigger mode recorded.
 
@@ -74,9 +74,9 @@ mode, and the exact source-record identities; source set = records at/before tri
 **Independent Test**: Generate artifacts in a cell, read each artifact's recorded source-record
 identities, and confirm they exactly match the records at/before the trigger that existed then.
 
-- [ ] T015 [P] [US2] Test in `tests/test_store_integration.py` (Postgres, skipped when no DB): migration 0003 upgrade → downgrade → upgrade is reversible and idempotent; `cadence`/`trigger_mode` round-trip through `save_artifact`/`get_artifacts`.
-- [ ] T016 [P] [US2] Test in `tests/test_loop.py` (or `test_compaction.py`): for a multi-trigger cell, each artifact's `source_record_ids` equals the id set of records with `iteration <= trigger_iteration`, artifacts are ordered by trigger iteration, and no later record appears (FR-005/007, SC-003 lineage half).
-- [ ] T017 [US2] Verify/extend `export_cell` round-trip test so exported `artifacts.json` includes complete lineage (cell, trigger_iteration, cadence, trigger_mode, source_record_ids).
+- [X] T015 [P] [US2] Test in `tests/test_store_integration.py` (Postgres, skipped when no DB): migration 0003 upgrade → downgrade → upgrade is reversible and idempotent; `cadence`/`trigger_mode` round-trip through `save_artifact`/`get_artifacts`.
+- [X] T016 [P] [US2] Test in `tests/test_loop.py` (or `test_compaction.py`): for a multi-trigger cell, each artifact's `source_record_ids` equals the id set of records with `iteration <= trigger_iteration`, artifacts are ordered by trigger iteration, and no later record appears (FR-005/007, SC-003 lineage half).
+- [X] T017 [US2] Verify/extend `export_cell` round-trip test so exported `artifacts.json` includes complete lineage (cell, trigger_iteration, cadence, trigger_mode, source_record_ids).
 
 **Checkpoint**: lineage is complete and persisted; US1+US2 together give a recorded, traceable operator.
 
@@ -90,11 +90,11 @@ fails loudly (naming artifact + iteration) on tamper; exposed via the `ds-agent-
 **Independent Test**: Run the audit over a cell; a faithful artifact passes with 0 LLM calls; a
 tampered artifact (future record / omitted record / history disagreement) fails loudly.
 
-- [ ] T018 [US3] Implement `verify_artifact_lineage(artifact_row, history)` in `src/ds_agent_loop/provenance.py`: reconstruct `{ r.id for r in history if r.iteration <= trigger_iteration }`, compare to recorded `source_record_ids`, return `LineageMismatch | None` distinguishing `future_record_leaked` / `record_omitted` / `history_disagreement` (FR-008/009).
-- [ ] T019 [US3] Implement `audit_compaction(store, cell_id) -> CompactionAuditResult` in `src/ds_agent_loop/provenance.py`: load artifacts (in trigger order) + history, run `verify_artifact_lineage` per artifact, perform zero LLM calls, aggregate `ok`/`mismatches`/`artifacts_checked`/`llm_calls=0`; tolerate NULL cadence as "unrecorded (pre-006)" (FR-006b).
-- [ ] T020 [US3] Add the `compaction <cell_id>` subcommand to `main()` in `src/ds_agent_loop/provenance.py` beside `replay`/`audit`: print per-artifact trigger_iteration/cadence/trigger_mode/source-count and the verdict (`OK (n artifacts, 0 LLM calls)` or each mismatch), non-zero exit on failure (FR-014).
-- [ ] T021 [P] [US3] Tests in `tests/test_provenance.py`: faithful cell audit passes with `llm_calls == 0` and correct `artifacts_checked` (SC-003/004); a NULL-cadence (pre-006) artifact is tolerated and still lineage-audited (FR-006b).
-- [ ] T022 [P] [US3] Tests in `tests/test_provenance.py`: tampered source set fails loudly naming artifact + record + iteration for each kind — future record injected (`future_record_leaked`), record omitted (`record_omitted`), recorded id absent from history (`history_disagreement`) (FR-009, SC-003).
+- [X] T018 [US3] Implement `verify_artifact_lineage(artifact_row, history)` in `src/ds_agent_loop/provenance.py`: reconstruct `{ r.id for r in history if r.iteration <= trigger_iteration }`, compare to recorded `source_record_ids`, return `LineageMismatch | None` distinguishing `future_record_leaked` / `record_omitted` / `history_disagreement` (FR-008/009).
+- [X] T019 [US3] Implement `audit_compaction(store, cell_id) -> CompactionAuditResult` in `src/ds_agent_loop/provenance.py`: load artifacts (in trigger order) + history, run `verify_artifact_lineage` per artifact, perform zero LLM calls, aggregate `ok`/`mismatches`/`artifacts_checked`/`llm_calls=0`; tolerate NULL cadence as "unrecorded (pre-006)" (FR-006b).
+- [X] T020 [US3] Add the `compaction <cell_id>` subcommand to `main()` in `src/ds_agent_loop/provenance.py` beside `replay`/`audit`: print per-artifact trigger_iteration/cadence/trigger_mode/source-count and the verdict (`OK (n artifacts, 0 LLM calls)` or each mismatch), non-zero exit on failure (FR-014).
+- [X] T021 [P] [US3] Tests in `tests/test_provenance.py`: faithful cell audit passes with `llm_calls == 0` and correct `artifacts_checked` (SC-003/004); a NULL-cadence (pre-006) artifact is tolerated and still lineage-audited (FR-006b).
+- [X] T022 [P] [US3] Tests in `tests/test_provenance.py`: tampered source set fails loudly naming artifact + record + iteration for each kind — future record injected (`future_record_leaked`), record omitted (`record_omitted`), recorded id absent from history (`history_disagreement`) (FR-009, SC-003).
 
 **Checkpoint**: the operator is auditable; silent signal drop is detectable from persisted state.
 
@@ -108,9 +108,9 @@ verified-replay + cross-regime audit pass unchanged.
 **Independent Test**: Run a `compacted_recent` cell, then run 005 `verify_cell` and `audit_regimes`
 and confirm they pass unchanged.
 
-- [ ] T023 [US4] Confirm `memory.build_view` and `_render_artifact` in `src/ds_agent_loop/memory.py` are unchanged (opaque-dict contract intact); add a focused assertion/comment if needed (FR-011).
-- [ ] T024 [P] [US4] Test in `tests/test_loop.py` (or `test_memory.py`): for a `compacted_recent` cell produced by the 006 operator, `provenance.verify_cell` replays every decision's memory view to its stored content hash (FR-012, SC-005).
-- [ ] T025 [P] [US4] Test in `tests/test_provenance.py`: two cells of one `(member, seed)` differing only in regime still pass `audit_regimes` (differ only in memory) with the operator-backed compacted cell (FR-012, SC-005).
+- [X] T023 [US4] Confirm `memory.build_view` and `_render_artifact` in `src/ds_agent_loop/memory.py` are unchanged (opaque-dict contract intact); add a focused assertion/comment if needed (FR-011).
+- [X] T024 [P] [US4] Test in `tests/test_loop.py` (or `test_memory.py`): for a `compacted_recent` cell produced by the 006 operator, `provenance.verify_cell` replays every decision's memory view to its stored content hash (FR-012, SC-005).
+- [X] T025 [P] [US4] Test in `tests/test_provenance.py`: two cells of one `(member, seed)` differing only in regime still pass `audit_regimes` (differ only in memory) with the operator-backed compacted cell (FR-012, SC-005).
 
 **Checkpoint**: 006 drops into the 005 backbone with no regression.
 
@@ -118,10 +118,10 @@ and confirm they pass unchanged.
 
 ## Phase 7: Polish & Cross-Cutting Concerns
 
-- [ ] T026 [P] Update `README.md` with the `ds-agent-memory compaction <cell_id>` usage and the cadence/trigger-mode/lineage concepts.
-- [ ] T027 [P] Refresh `notes/progress.html` with a "What 006 delivers" section (operator hardened, cadence + trigger mode recorded, lineage audit, migration 0003, seam unchanged) and the new test count.
-- [ ] T028 Run the full `uv run pytest` suite (offline + Postgres integration) and confirm all tasks' guarantees hold and the suite is green and grown (SC-007).
-- [ ] T029 Run `detect_changes({scope: "compare", base_ref: "main"})` (per CLAUDE.md) to confirm only the expected symbols/flows changed before handing off to commit.
+- [X] T026 [P] Update `README.md` with the `ds-agent-memory compaction <cell_id>` usage and the cadence/trigger-mode/lineage concepts.
+- [X] T027 [P] Refresh `notes/progress.html` with a "What 006 delivers" section (operator hardened, cadence + trigger mode recorded, lineage audit, migration 0003, seam unchanged) and the new test count.
+- [X] T028 Run the full `uv run pytest` suite (offline + Postgres integration) and confirm all tasks' guarantees hold and the suite is green and grown (SC-007).
+- [X] T029 Run `detect_changes({scope: "compare", base_ref: "main"})` (per CLAUDE.md) to confirm only the expected symbols/flows changed before handing off to commit.
 
 ---
 

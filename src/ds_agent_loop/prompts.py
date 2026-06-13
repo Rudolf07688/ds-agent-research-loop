@@ -202,6 +202,40 @@ class AuditResult(BaseModel):
         return self.same_member_seed and self.fingerprint_equal
 
 
+class LineageMismatch(BaseModel):
+    """One compaction artifact whose recorded source lineage disagrees with the raw trajectory.
+
+    Feature 006 (Principle XII). ``kind`` distinguishes a future record leaking into the source
+    set, a record at/before the trigger being omitted, or a recorded id absent from history
+    (FR-009). Loud + specific: names the artifact, its trigger, and the offending record.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    artifact_id: str
+    trigger_iteration: int
+    kind: str  # future_record_leaked | record_omitted | history_disagreement
+    record_id: int | None = None
+    detail: str = ""
+
+
+class CompactionAuditResult(BaseModel):
+    """Outcome of the deterministic, no-LLM lineage audit over one cell (US3, FR-008/009).
+
+    ``llm_calls`` MUST be ``0`` (the audit reconstructs lineage from persisted state only,
+    Principle IX). ``ok`` is True iff every artifact's recorded source set exactly matches the
+    records at/before its trigger.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    cell_id: str
+    artifacts_checked: int = 0
+    ok: bool = True
+    llm_calls: int = 0
+    mismatches: list[LineageMismatch] = Field(default_factory=list)
+
+
 class ExperimentCell(BaseModel):
     """One ``(dataset × regime × seed × k × m)`` sweep unit (FR-014, Principles IX/XIII)."""
 

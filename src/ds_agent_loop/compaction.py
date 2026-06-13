@@ -35,12 +35,39 @@ def should_compact(
 
 
 def select_source(history: list[ExperimentRecord], trigger_iteration: int) -> list[ExperimentRecord]:
-    """Records at or before the trigger only — enforces no future-outcome leakage (SC-005).
+    """Records at or before the trigger only — enforces no future-outcome leakage (FR-005, SC-005).
 
-    If fewer than ``m`` exist this still returns whatever is present (compact-over-what-exists).
+    The compaction operator (Principle XII) MUST see only experiments that existed at the trigger:
+    no record with ``iteration > trigger_iteration`` may ever enter the source set. If fewer than
+    ``m`` exist this still returns whatever is present (compact-over-what-exists; deterministic +
+    logged, clarification 2026-06-13). This invariant is the producer-side half of the lineage the
+    deterministic audit (``provenance.audit_compaction``) later checks against persisted history.
     """
 
-    return [r for r in history if r.iteration <= trigger_iteration]
+    source = [r for r in history if r.iteration <= trigger_iteration]
+    # No-future-leakage invariant, pinned at the seam (the audit re-proves it from persisted state).
+    assert all(r.iteration <= trigger_iteration for r in source), "future record leaked into source"
+    return source
+
+
+def trigger_mode_for(
+    iteration: int,
+    m: int,
+    source_count: int,
+    *,
+    prompt_tokens: int | None = None,
+    token_threshold: int | None = None,
+) -> str:
+    """Classify which trigger mode actually fired at this compaction point (FR-006, recorded
+    with the artifact). ``fixed`` — the exact ``m``-th cadence. ``compact_over_what_exists`` —
+    an off-cadence fire over a short window (fewer than ``m`` source records). ``token_threshold``
+    — the optional secondary trigger when memory exceeds the token budget off-cadence (FR-024)."""
+
+    if m > 0 and iteration % m == 0:
+        return "fixed"
+    if source_count < m:
+        return "compact_over_what_exists"
+    return "token_threshold"
 
 
 def _source_json(source_records: list[ExperimentRecord]) -> str:
@@ -64,7 +91,11 @@ async def compact(settings, *, source_records, descriptor, request_fn=None) -> d
     """Produce a Directional Research Memory artifact (as a dict) from the source records.
 
     ``request_fn`` is injectable for hermetic tests; it defaults to the real Vertex/Gemini
-    structured call. A malformed artifact propagates as ``LLMError`` (fail fast, FR-010).
+    structured call. The operator is the only third sanctioned LLM job and emits a
+    schema-validated ``DirectionalMemory`` (Principles II, XII): malformed / non-conforming
+    output MUST fail fast as ``LLMError`` and is NEVER persisted (FR-002). The fail-fast happens
+    inside ``request_fn`` (Pydantic validation of the structured response); this function only
+    returns once a conforming artifact exists, so the caller never writes a malformed one.
     """
 
     request_fn = request_fn or llm.request_compaction

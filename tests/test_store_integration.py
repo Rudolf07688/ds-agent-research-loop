@@ -89,6 +89,54 @@ def test_real_artifact_and_logs_roundtrip(pg_store):
     assert any(line["event"] == "iteration_done" for line in pg_store.get_logs(_TEST_CELL))
 
 
+# --- feature 006: recorded cadence + lineage against the REAL store ----------
+
+
+def test_real_cadence_and_trigger_mode_round_trip(pg_store):
+    """FR-004/006a: cadence + trigger_mode persist through save_artifact/get_artifacts (migration 0003)."""
+    pg_store.upsert_cell(_cell(CellStatus.running))
+    pg_store.save_artifact(
+        cell_id=_TEST_CELL, trigger_iteration=10, artifact={"confirmed_findings": ["x"]},
+        source_record_ids=[1, 2, 3], cadence=5, trigger_mode="fixed",
+    )
+    art = pg_store.get_artifacts(_TEST_CELL)[0]
+    assert art["cadence"] == 5 and art["trigger_mode"] == "fixed"
+    # idempotent upsert replaces the recorded cadence/mode too (FR-010)
+    pg_store.save_artifact(
+        cell_id=_TEST_CELL, trigger_iteration=10, artifact={"confirmed_findings": ["y"]},
+        source_record_ids=[1, 2, 3], cadence=5, trigger_mode="token_threshold",
+    )
+    art = pg_store.get_artifacts(_TEST_CELL)[0]
+    assert art["trigger_mode"] == "token_threshold"
+
+
+def test_real_migration_0003_is_reversible_and_idempotent(pg_store):
+    """T015: migration 0003 upgrade -> downgrade -> upgrade is reversible; columns return as nullable."""
+    from sqlalchemy import inspect
+
+    settings = Settings()
+
+    def _cols() -> set[str]:
+        return {c["name"] for c in inspect(pg_store.engine).get_columns("compaction_artifacts")}
+
+    # start at head (cadence present)
+    S.upgrade_to_head(settings.database_url)
+    assert {"cadence", "trigger_mode"} <= _cols()
+
+    from alembic import command
+    from alembic.config import Config
+    from pathlib import Path
+
+    root = Path(S.__file__).resolve().parents[2]
+    cfg = Config(str(root / "alembic.ini"))
+    cfg.set_main_option("script_location", str(root / "alembic"))
+    cfg.set_main_option("sqlalchemy.url", S.normalize_url(settings.database_url))
+    command.downgrade(cfg, "0002")
+    assert not ({"cadence", "trigger_mode"} & _cols())  # dropped
+    command.upgrade(cfg, "head")
+    assert {"cadence", "trigger_mode"} <= _cols()  # restored, idempotent
+
+
 # --- feature 004: benchmark members + splits against the REAL store ----------
 
 

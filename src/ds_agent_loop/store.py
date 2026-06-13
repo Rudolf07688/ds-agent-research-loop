@@ -167,6 +167,9 @@ compaction_artifacts = Table(
     Column("artifact", JSONB),
     Column("source_record_ids", JSONB),
     Column("created_ts", String),
+    # feature 006: the recorded cadence (FR-004) — additive, nullable (pre-006 rows read back None).
+    Column("cadence", Integer),
+    Column("trigger_mode", String),
     UniqueConstraint("cell_id", "trigger_iteration", name="uq_artifact_cell_trigger"),
 )
 
@@ -331,6 +334,8 @@ class Store:
         trigger_iteration: int,
         artifact: dict[str, Any],
         source_record_ids: list[int],
+        cadence: int | None = None,
+        trigger_mode: str | None = None,
     ) -> str:
         artifact_id = f"{cell_id}@{trigger_iteration}"
         row = {
@@ -340,6 +345,8 @@ class Store:
             "artifact": artifact,
             "source_record_ids": source_record_ids,
             "created_ts": _now(),
+            "cadence": cadence,
+            "trigger_mode": trigger_mode,
         }
         stmt = pg_insert(compaction_artifacts).values(**row).on_conflict_do_update(
             index_elements=["cell_id", "trigger_iteration"],
@@ -347,6 +354,8 @@ class Store:
                 "artifact": row["artifact"],
                 "source_record_ids": row["source_record_ids"],
                 "created_ts": row["created_ts"],
+                "cadence": row["cadence"],
+                "trigger_mode": row["trigger_mode"],
             },
         )
         with self.engine.begin() as conn:
@@ -498,6 +507,8 @@ class FakeStore:
         trigger_iteration: int,
         artifact: dict[str, Any],
         source_record_ids: list[int],
+        cadence: int | None = None,
+        trigger_mode: str | None = None,
     ) -> str:
         artifact_id = f"{cell_id}@{trigger_iteration}"
         self._artifacts[(cell_id, trigger_iteration)] = {
@@ -507,6 +518,8 @@ class FakeStore:
             "artifact": artifact,
             "source_record_ids": list(source_record_ids),
             "created_ts": _now(),
+            "cadence": cadence,
+            "trigger_mode": trigger_mode,
         }
         return artifact_id
 

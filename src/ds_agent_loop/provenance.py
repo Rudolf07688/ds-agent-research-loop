@@ -24,8 +24,10 @@ from . import store as store_mod
 from .benchmark import DatasetDescriptor
 from .prompts import (
     AuditResult,
+    CompactionAuditResult,
     ExperimentCell,
     ExperimentRecord,
+    LineageMismatch,
     ReplayMismatch,
     ReplayResult,
     Settings,
@@ -200,7 +202,83 @@ def audit_regimes(store: Any, cell_id_a: str, cell_id_b: str) -> AuditResult:
 
 
 # ---------------------------------------------------------------------------
-# CLI (FR-017): `ds-agent-memory replay|audit` — on demand only
+# Compaction lineage audit (FR-007/008/009, US3) — deterministic, NO LLM calls
+# ---------------------------------------------------------------------------
+
+
+def verify_artifact_lineage(
+    artifact_row: dict[str, Any],
+    history: list[ExperimentRecord],
+) -> LineageMismatch | None:
+    """Re-prove one artifact's recorded source lineage against the raw trajectory (Principle XII).
+
+    Reconstructs the exact set of records at/before the trigger from persisted ``history`` and
+    compares it to the recorded ``source_record_ids``. Records are identified by ``iteration`` (the
+    identity ``run_cell`` persists as the lineage). Returns ``None`` when lineage is exact, else the
+    first :class:`LineageMismatch` found — distinguishing a future record leaking in, a record
+    at/before the trigger being omitted, or a recorded id absent from history (FR-009). No LLM calls.
+    """
+
+    trigger = artifact_row["trigger_iteration"]
+    artifact_id = artifact_row.get("artifact_id", f"{artifact_row.get('cell_id', '?')}@{trigger}")
+    history_iters = {r.iteration for r in history}
+    expected = {it for it in history_iters if it <= trigger}
+    recorded = set(artifact_row.get("source_record_ids") or [])
+
+    # A recorded id with iteration beyond the trigger is forbidden future leakage (only meaningful
+    # when the id is a real record; an id absent from history is a distinct disagreement, below).
+    for rid in sorted(recorded):
+        if rid in history_iters and rid > trigger:
+            return LineageMismatch(
+                artifact_id=artifact_id, trigger_iteration=trigger,
+                kind="future_record_leaked", record_id=rid,
+                detail=f"recorded source record {rid} has iteration > trigger {trigger}",
+            )
+    # A recorded id that does not exist in the persisted history — lineage disagrees with reality.
+    for rid in sorted(recorded):
+        if rid not in history_iters:
+            return LineageMismatch(
+                artifact_id=artifact_id, trigger_iteration=trigger,
+                kind="history_disagreement", record_id=rid,
+                detail=f"recorded source record {rid} is absent from persisted history",
+            )
+    # A record at/before the trigger that was silently dropped from the source set.
+    for rid in sorted(expected - recorded):
+        return LineageMismatch(
+            artifact_id=artifact_id, trigger_iteration=trigger,
+            kind="record_omitted", record_id=rid,
+            detail=f"record {rid} (iteration <= trigger {trigger}) is missing from recorded lineage",
+        )
+    return None
+
+
+def audit_compaction(store: Any, cell_id: str) -> CompactionAuditResult:
+    """Audit every compaction artifact of ``cell_id`` against the raw trajectory (US3, FR-008/009).
+
+    Loads each artifact (in trigger-iteration order) and the cell's full history, runs
+    :func:`verify_artifact_lineage` per artifact, and aggregates. Performs ZERO LLM calls
+    (asserted, Principle IX/SC-004). A NULL ``cadence`` (a pre-006 artifact) is tolerated — the
+    lineage is still audited (FR-006b). ``ok`` is True iff no mismatch is found.
+    """
+
+    artifacts = store.get_artifacts(cell_id)  # already ordered by trigger_iteration
+    history = store.get_records(cell_id)
+    mismatches: list[LineageMismatch] = []
+    for art in artifacts:
+        mismatch = verify_artifact_lineage(art, history)
+        if mismatch is not None:
+            mismatches.append(mismatch)
+    return CompactionAuditResult(
+        cell_id=cell_id,
+        artifacts_checked=len(artifacts),
+        ok=not mismatches,
+        llm_calls=0,  # deterministic reconstruction from persisted state — never an LLM call
+        mismatches=mismatches,
+    )
+
+
+# ---------------------------------------------------------------------------
+# CLI (FR-017): `ds-agent-memory replay|audit|compaction` — on demand only
 # ---------------------------------------------------------------------------
 
 
@@ -227,6 +305,11 @@ def main(argv: list[str] | None = None) -> int:
     aud.add_argument("--cell-a", required=True)
     aud.add_argument("--cell-b", required=True)
 
+    comp = sub.add_parser(
+        "compaction", help="audit a cell's compaction artifacts against the raw trajectory (no LLM)"
+    )
+    comp.add_argument("cell_id", help="cell_id whose compaction lineage to audit")
+
     args = parser.parse_args(argv)
     settings = Settings()
     store_mod.upgrade_to_head(settings.database_url)  # schema owned by Alembic (Principle IV)
@@ -241,6 +324,25 @@ def main(argv: list[str] | None = None) -> int:
         for r in results:
             _print_replay(r)
         return 0 if all(r.ok for r in results) else 1
+
+    if args.command == "compaction":
+        result = audit_compaction(store, args.cell_id)
+        for art in store.get_artifacts(args.cell_id):
+            print(
+                f"    artifact {art['artifact_id']}: trigger={art['trigger_iteration']} "
+                f"cadence={art.get('cadence')} mode={art.get('trigger_mode')} "
+                f"sources={len(art.get('source_record_ids') or [])}"
+            )
+        if result.ok:
+            print(f"[ok] {result.cell_id}: OK ({result.artifacts_checked} artifacts, {result.llm_calls} LLM calls)")
+            return 0
+        print(f"[FAIL] {result.cell_id}: {len(result.mismatches)} lineage mismatch(es)")
+        for mm in result.mismatches:
+            print(
+                f"    artifact {mm.artifact_id} (iter {mm.trigger_iteration}): "
+                f"{mm.kind} record={mm.record_id} — {mm.detail}"
+            )
+        return 1
 
     # audit
     result = audit_regimes(store, args.cell_a, args.cell_b)

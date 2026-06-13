@@ -222,6 +222,37 @@ The config fingerprint is stamped into each cell's `repro` (and the export `cell
 tables or migration are added. Full walkthrough + API contract:
 `specs/005-memory-regime-abstraction/quickstart.md` and `.../contracts/provenance-api.md`.
 
+## The compaction operator: recorded cadence + lineage audit (spec 006)
+
+The `compacted_recent` regime is backed by a **sanctioned, fully auditable** compaction operator
+(Principle XII). On an explicit **cadence** `m` the outer loop projects the trajectory-so-far onto
+the typed `DirectionalMemory` belief schema (the third sanctioned LLM job), seeing **only records
+at or before the trigger** — never a future outcome. Every artifact now records, alongside its
+source lineage:
+
+- **`cadence`** — the explicit `m` in effect at that trigger (FR-004), and
+- **`trigger_mode`** — `fixed` (exact cadence), `compact_over_what_exists` (a short window), or
+  `token_threshold` (the optional off-cadence size trigger).
+
+A **deterministic, no-LLM** lineage audit reconstructs, from persisted history, the exact set of
+records at/before each artifact's trigger and asserts it equals the recorded `source_record_ids`.
+It fails loudly if a future record leaked in, a record was silently omitted, or lineage disagrees
+with history:
+
+```bash
+# audit a cell's compaction lineage against the raw trajectory (no LLM calls; non-zero on tamper):
+uv run ds-agent-memory compaction 'wine|compacted_recent|s0|k3|m10'
+# prints per artifact: trigger_iteration, cadence, trigger_mode, source count
+# then: OK (n artifacts, 0 LLM calls)  — or each LineageMismatch (future_record_leaked /
+#       record_omitted / history_disagreement) naming the artifact + offending record + iteration.
+```
+
+The single schema change is the additive, reversible **Alembic migration 0003** (`cadence` +
+`trigger_mode` on `compaction_artifacts`; pre-006 rows read back `NULL` and are still audited). The
+005 memory seam (`memory.build_view`), verified replay, and cross-regime audit are **unchanged**.
+Full walkthrough + contracts: `specs/006-compaction-operator/quickstart.md`,
+`.../contracts/lineage-audit-api.md`.
+
 ## Live verification (manual, real Vertex AI call)
 
 The offline test suite is hermetic. To verify a real Gemini/Vertex round-trip (excluded from
