@@ -1,11 +1,19 @@
 <!--
 SYNC IMPACT REPORT
 ==================
-Version change: 5.0.0 → 5.1.0
-Bump rationale (5.1.0): MINOR — adds one new binding Development-Workflow practice requiring that
-  repository navigation and pre-change impact analysis go through the GitNexus MCP tools before any
-  larger change. No principle is removed or redefined and no scope constraint is loosened, so the
-  change is additive guidance rather than a breaking governance change.
+Version change: 5.1.0 → 5.2.0
+Bump rationale (5.2.0): MINOR — adds binding persistence guidance: the Postgres schema MUST be
+  managed with Alembic migrations (versioned, reviewed, applied deterministically) rather than ad-hoc
+  DDL or a silent create_all in the operational path (amends Principle IV, the Scope persistence
+  constraint, and the Development Workflow). Also registers
+  notes/research/technical-guideline-high-level.md as a NON-binding implementation reference
+  (memory-architecture guidance). No principle is removed or redefined and no scope is loosened, so
+  the change is additive guidance.
+
+Prior bump rationale (5.0.0 → 5.1.0): MINOR — adds one new binding Development-Workflow practice
+  requiring that repository navigation and pre-change impact analysis go through the GitNexus MCP
+  tools before any larger change. No principle is removed or redefined and no scope constraint is
+  loosened, so the change is additive guidance rather than a breaking governance change.
 
 Prior bump rationale (4.0.0 → 5.0.0): MAJOR — the project is re-pointed from a single fixed toy task toward a PhD-grade
   research thesis, **Directional Research Memory: Compaction as Momentum in Experiment Space**
@@ -60,6 +68,17 @@ Templates / docs requiring review:
      structured logging persisted to Postgres — verify against Principles X & XIII)
   ⚠ README.md / .env.example (document the benchmark, the three memory regimes, the compaction
      artifact, and the replay/analysis workflow as those features land)
+
+Reviewed for v5.2.0 (Alembic + reference doc):
+  ✅ .specify/memory/constitution.md (Alembic schema-migration mandate added to Principle IV, the
+     Scope persistence constraint, and the Development Workflow; technical-guideline reference
+     registered in Governance)
+  ✅ .specify/templates/{plan,spec,tasks}-template.md (generic, constitution-driven gates — no change;
+     future plans evaluate the Alembic constraint against v5.2.0)
+  ✅ notes/research/technical-guideline-high-level.md (registered as a NON-binding reference doc)
+  ⚠ src/ds_agent_loop/store.py (currently builds tables via SQLAlchemy `metadata.create_all`; a
+     follow-up MUST introduce an Alembic migration environment and restrict `create_all` to
+     ephemeral/test schemas — see Principle IV. Not changed by this amendment.)
 
 Deferred TODOs:
   - The multi-dataset benchmark suite, the memory-regime abstraction, the Directional Research
@@ -172,6 +191,12 @@ The experiment MUST be inspectable at every step and rerunnable from intermediat
   per-(dataset, seed, regime) trajectories, every experiment record, every compaction artifact and
   its source lineage, and — crucially — exactly what memory was shown to the agent before each
   decision (Principle XIII). The database schema MUST be documented.
+- The Postgres schema MUST be managed with **Alembic** migrations: every schema change ships as a
+  versioned, reviewed migration applied deterministically (`alembic upgrade head`) — never ad-hoc DDL
+  or a silent `create_all` in the operational path. Migrations are part of the reproducible record
+  (Principle IX): a fresh environment reaches the current schema by running them in order, and the
+  schema version is recoverable from the migration history. A convenience `create_all` MAY be used
+  only for ephemeral or test schemas.
 - Postgres MUST NOT become an opaque or sole home of truth: its contents MUST remain inspectable
   and exportable to human-readable JSON/CSV, and the seed single-run path MAY still mirror core
   state as plain files under `state/` (`data_spec.json`, `seed_rows.json`, `dataset.csv`,
@@ -416,7 +441,9 @@ trajectory and threshold quantities is what keeps the eventual thesis honest and
   `DATABASE_URL` connection string supplied through the centralized settings / `.env`. A root
   `docker-compose.yml` orchestrates the backend together with this database for local runs; it MUST
   NOT bake in secrets, and ADC stays mounted read-only. This is the only sanctioned database use
-  (Principles I & IV).
+  (Principles I & IV). Tables are defined with SQLAlchemy Core and the schema is created and evolved
+  exclusively through **Alembic** migrations (`alembic`, declared in `pyproject.toml`); see
+  Principle IV.
 - Observability: runs MUST emit structured, leveled logs (e.g. JSON lines) covering lifecycle,
   per-iteration decisions, the memory shown, compaction events, LLM/persistence operations, and
   failures; logs MUST be persisted to and retrievable from Postgres in addition to stdout /
@@ -447,6 +474,9 @@ trajectory and threshold quantities is what keeps the eventual thesis honest and
   loop, the memory regimes, or persistence), the affected symbol's blast radius MUST be assessed
   with GitNexus impact analysis and any HIGH/CRITICAL risk surfaced before proceeding; unfamiliar
   code MUST be explored via GitNexus rather than ad-hoc grepping.
+- Any change to the Postgres schema MUST ship as an **Alembic migration** in the same change and be
+  applied with `alembic upgrade head`; reviews reject schema drift that bypasses a migration, and a
+  `create_all` outside ephemeral/test paths is a violation (Principle IV).
 - Python is run only via `uv run python ...`, and dependencies are changed only through `uv`
   (Principle VI).
 - The Docker entrypoint MUST be exercised, not just unit-tested: a change is not done until
@@ -483,5 +513,10 @@ project pursuing the Directional Research Memory thesis.
   (Principle X), and that every reported result is traceable to recorded runs (Principles XI, XIV).
 - When a change conflicts with a principle, either the change is revised or the principle is formally
   amended first — silent deviations are not permitted.
+- Implementation-level technical guidance — notably the memory-architecture notes in
+  `notes/research/technical-guideline-high-level.md` (the async durable-memory vs. sync planner-time
+  context split, Postgres as source of truth, an optional semantic-retrieval layer, and versioned
+  structured compaction) — is a NON-binding REFERENCE that informs design but does NOT override these
+  principles. Where the reference and the constitution diverge, the constitution governs.
 
-**Version**: 5.1.0 | **Ratified**: 2026-06-13 | **Last Amended**: 2026-06-13
+**Version**: 5.2.0 | **Ratified**: 2026-06-13 | **Last Amended**: 2026-06-13
