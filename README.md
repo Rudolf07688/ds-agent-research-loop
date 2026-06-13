@@ -1,129 +1,108 @@
-# LLM Autonomous Data Scientist (Toy) Loop
+# Directional Research Memory — Autonomous Data-Scientist Agent
 
-A small offline experiment: an LLM bootstraps a seed delivery dataset plus a reusable
-generation spec (one structured-JSON call) and proposes the next experiment step
-(structured-JSON call) by reasoning over recorded metrics. Python owns everything else —
-local dataset expansion from the fixed spec, training/scoring one scikit-learn regressor
-per iteration, recording history, tracking the best run, and looping with an early stop.
+A research codebase studying one question: **does an LLM data-scientist agent get *worse* the more
+raw history you give it, and can a structured, compact "research memory" fix that?**
 
-Safety is enforced in Python: a model allowlist, hyperparameter validation, and
-JSON-config-only LLM authority (no code execution).
+An LLM agent iteratively runs ML experiments (pick a model, tune it, expand the data, stop). The
+thesis — *Directional Research Memory: Compaction as Momentum in Experiment Space* — is that beyond
+some threshold, feeding the agent more **raw** episodic history hurts performance, while replacing
+that history with a **structured compaction** of what's true / what failed / what's unresolved /
+where to search next preserves the *direction* of learning (like optimization momentum) and improves
+both sample efficiency and final results.
 
-The LLM backend is **Google Gemini on Vertex AI**, accessed via the `google.genai` SDK and
-hosted by a **minimal Google ADK agent** (one tool-less agent per call). The two structured
-schemas, the model allowlist, and the bounded-agency rules are unchanged.
+The codebase exists to make that claim **demonstrable or falsifiable with replayable evidence**: a
+benchmark of tabular tasks, an A/B/C ablation over three memory regimes, and a fully logged,
+reproducible experiment harness. See `notes/research/paths/001-directional-research-memory-thesis-story.md`
+for the long-form story and `.specify/memory/constitution.md` for the governing principles.
+
+> **Status (developer note).** What runs end-to-end **today** is the single-dataset agent loop
+> (sections [Setup](#setup) → [Run](#run)). The **memory-regime ablation harness** — three regimes,
+> the Directional Research Memory compaction operator, the multi-dataset benchmark, Postgres
+> persistence, and the paired statistical analysis — is the **active build**, specified in
+> `specs/003-memory-compaction-ablation/` (`plan.md`, `data-model.md`, `contracts/`). Commands for
+> that harness are marked **(planned)** below.
+
+## The three memory regimes (what the study compares)
+
+Everything is held fixed except the slice of history the agent sees before each decision:
+
+- **A — recent-only**: the last `k` raw experiment records.
+- **B — all-raw**: every prior raw record (the regime expected to degrade).
+- **C — compacted+recent**: one structured **Directional Research Memory** artifact + the last `k`
+  raw records.
+
+## Safety model (unchanged, non-negotiable)
+
+The LLM only ever returns **structured JSON** that Python validates and acts on — never code it runs:
+
+- A fixed, developer-owned **model allowlist** (regressors *and* classifiers); hyperparameters are
+  validated before any estimator is built.
+- Sanctioned LLM jobs only: seed-data generation, next-step proposal, and — for regime C —
+  research-memory compaction. Each is hosted by a **minimal, tool-less Google ADK agent** with an
+  `output_schema`.
+
+Backend: **Google Gemini on Vertex AI** via the `google.genai` SDK. Auth is **Application Default
+Credentials (ADC)** — no API keys, never committed or baked into images.
 
 ## Prerequisites
 
 - Python 3.13 (pinned in `.python-version`)
-- [uv](https://docs.astral.sh/uv/) for dependency management and running scripts
-- A Google Cloud project with the Vertex AI API enabled, and **Application Default
-  Credentials (ADC)** — no API key is used
+- [uv](https://docs.astral.sh/uv/) for dependency management and running everything
+- A Google Cloud project with the Vertex AI API enabled, and **ADC**
+- Docker + Docker Compose (only for the containerized sweep with Postgres)
 
 ## Setup
 
 ```bash
 uv sync                                  # resolve & install deps from pyproject.toml / uv.lock
-gcloud auth application-default login    # ADC — authenticates the loop to Vertex AI
+gcloud auth application-default login    # ADC — authenticates the agent to Vertex AI
 gcloud config set project research-se-gen-ai
-# Optional: copy .env.example -> .env only to override project/location/model defaults.
+cp .env.example .env                     # optional: override project/location/model/run params
 ```
 
-Defaults (all overridable via environment): project `research-se-gen-ai`, location `global`,
-model `gemini-3.5-flash`. Only valid ADC credentials are mandatory. Credentials are never
-committed or baked into images.
+Defaults (all overridable via environment / `.env`): project `research-se-gen-ai`, location
+`global`, model `gemini-3.5-flash`. Only valid ADC credentials are mandatory.
 
 ## Layout
 
-The library is a `src`-layout package; only the deployable consumer and runtime artifacts
-live outside it:
+A `src`-layout package; only the deployable consumer and runtime artifacts live outside it:
 
 ```text
-src/ds_agent_loop/   # the publishable library (prompts, llm, data_gen, train, history, main)
-entrypoint/          # a deployable consumer: run.py + config.py + smoke_live.py
-tests/               # pytest units against the installed package (hermetic, no network)
-Dockerfile           # multi-stage uv build; runs the consumer entrypoint
+src/ds_agent_loop/   # the library
+  prompts.py         #   typed models, settings, the sanctioned JSON schemas + prompts
+  llm.py             #   thin Vertex/Gemini wrapper (one tool-less ADK agent per call)
+  data_gen.py        #   local synthetic-data expansion from a fixed spec (no LLM)
+  train.py           #   model allowlist, hyperparameter validation, training/scoring
+  history.py         #   run/best-run state
+  main.py            #   the experiment loop
+  # planned (spec 003): benchmark.py, memory.py, compaction.py, store.py, experiment.py, analysis.py
+entrypoint/          # deployable consumer: run.py + config.py + smoke_live.py
+tests/               # pytest units against the package (hermetic, no network)
+docker-compose.yml   # backend + Postgres (postgres:17-alpine)
 state/ outputs/      # runtime artifacts (gitignored)
-entrypoint/runs/     # per-run output dirs (gitignored)
+specs/ notes/        # specs (Spec Kit) and human-readable progress/research notes
 ```
 
-## Run
+## Run (single agent loop — works today)
 
 The library installs a console script (`ds-agent-loop`):
 
 ```bash
-uv run ds-agent-loop                                 # full toy run (N=10, patience=3)
+uv run ds-agent-loop                                 # full run (N=10, patience=3)
 uv run ds-agent-loop --iterations 5 --target-size 800
 uv run python -m ds_agent_loop.main --iterations 5   # equivalent module form
 ```
 
-Or run the bundled entrypoint, which writes results to a timestamped run directory:
+Or the bundled entrypoint, which writes to a timestamped run directory:
 
 ```bash
-uv run python entrypoint/run.py                       # -> entrypoint/runs/run_<dt>/results.text
+uv run python entrypoint/run.py                      # -> entrypoint/runs/run_<dt>/results.text
 ```
 
 The first run makes one LLM seed-generation call and saves `state/seed_rows.json` +
-`state/data_spec.json`. Subsequent runs reuse them (no seed call) and resume from saved
-state.
+`state/data_spec.json`; later runs reuse them (no seed call) and resume from saved state.
 
-## Live verification (manual, real Vertex AI call)
-
-The offline test suite is hermetic (no network). To verify a real Gemini/Vertex round-trip,
-authenticate with ADC (above) and run the manual smoke script — it is deliberately excluded
-from `pytest`:
-
-```bash
-uv run python entrypoint/smoke_live.py            # one live run + success-criteria checks
-uv run python entrypoint/smoke_live.py            # re-run: resumes (skips the seed call)
-uv run python entrypoint/smoke_live.py --fresh    # clears smoke state to force a first run
-```
-
-It asserts seed files are created, iterations complete, a results file is written, and the
-best run is no worse than the baseline. It uses a persistent state dir so a second run
-exercises the resume (zero-seed) path.
-
-## Container
-
-Build a portable image (library + consumer) and run it with credentials supplied at launch
-and artifacts persisted via a mounted volume. **No secrets are baked in**, but a local
-`.env` (if present at build time) *is* baked in to seed non-secret defaults — project,
-location, model, run params — so the image runs with almost no setup. Credentials must never
-live in `.env` (see `.env.example`); they are always mounted at run time.
-
-```bash
-# Preferred: runs gitleaks against .env before building to catch accidental secrets.
-# Install gitleaks first: brew install gitleaks (or see https://github.com/gitleaks/gitleaks)
-./docker-build.sh
-
-# Minimal run: relies on baked-in defaults (and your local .env, if any). Only credentials
-# need to be supplied.
-docker run --rm \
-  -e GOOGLE_APPLICATION_CREDENTIALS=/adc/key.json \
-  -v "$HOME/.config/gcloud/application_default_credentials.json:/adc/key.json:ro" \
-  -v "$PWD/entrypoint/runs:/app/entrypoint/runs" \
-  ds-agent-loop
-```
-
-To **override** any default, pass it as an environment variable — real env vars take
-precedence over both the baked defaults and `.env`:
-
-```bash
-docker run --rm \
-  -e GOOGLE_GENAI_USE_VERTEXAI=TRUE \
-  -e GOOGLE_CLOUD_PROJECT=research-se-gen-ai \
-  -e GOOGLE_CLOUD_LOCATION=global \
-  -e GEMINI_MODEL=gemini-3.5-flash \
-  -e GOOGLE_APPLICATION_CREDENTIALS=/adc/key.json \
-  -v "$HOME/.config/gcloud/application_default_credentials.json:/adc/key.json:ro" \
-  -v "$PWD/entrypoint/runs:/app/entrypoint/runs" \
-  ds-agent-loop
-```
-
-Mount `state/` as well (`-v "$PWD/state:/app/state"`) for a shared, resumable run; otherwise
-each container run re-seeds in isolated state. Running without credentials fails fast.
-
-## Inspect results
+### Inspect results
 
 ```bash
 cat state/best_run.json        # best model/score so far
@@ -131,11 +110,76 @@ cat state/history.json         # every iteration: model, params, metrics, ration
 cat outputs/run_summary.txt    # human-readable summary
 ```
 
+## Run the memory-regime ablation (planned — spec 003)
+
+Once the harness lands, the research workflow is a single containerized command that brings up
+Postgres, runs every `(dataset × regime × seed)` cell to its budget, and exits cleanly:
+
+```bash
+docker compose up --build                            # (planned) full A/B/C sweep -> Postgres
+
+# single cell, for development / smoke:
+uv run python -m ds_agent_loop.main \
+  --dataset delivery_time --regime compacted_recent --seed 0 --k 5 --m 10 --iterations 30   # (planned)
+
+# export everything to inspectable JSON/CSV, then analyze:
+uv run python -m ds_agent_loop.store export --out outputs/export                              # (planned)
+uv run python -m ds_agent_loop.analysis --from outputs/export --out outputs/analysis          # (planned)
+```
+
+The harness keeps every run **replayable and resumable** (interrupted sweeps don't recompute
+finished cells), persists the **exact memory shown** before each decision, and emits **structured
+logs to stdout and Postgres**. Full walkthrough: `specs/003-memory-compaction-ablation/quickstart.md`.
+
+## Live verification (manual, real Vertex AI call)
+
+The offline test suite is hermetic. To verify a real Gemini/Vertex round-trip (excluded from
+`pytest`):
+
+```bash
+uv run python entrypoint/smoke_live.py            # one live run + success-criteria checks
+uv run python entrypoint/smoke_live.py            # re-run: resumes (skips the seed call)
+uv run python entrypoint/smoke_live.py --fresh    # clears smoke state to force a first run
+```
+
+## Container
+
+Build a portable image (library + consumer); supply credentials at launch and persist artifacts via
+mounts. **No secrets are baked in** — credentials are always mounted at run time.
+
+```bash
+./docker-build.sh                                  # runs gitleaks against .env before building
+```
+
+`docker compose up` (above) is the preferred path since it also brings up Postgres. For a standalone
+container run:
+
+```bash
+docker run --rm \
+  -e GOOGLE_APPLICATION_CREDENTIALS=/adc/key.json \
+  -v "$HOME/.config/gcloud/application_default_credentials.json:/adc/key.json:ro" \
+  -v "$PWD/entrypoint/runs:/app/entrypoint/runs" \
+  ds-agent-loop
+```
+
+Real env vars (`GOOGLE_CLOUD_PROJECT`, `GOOGLE_CLOUD_LOCATION`, `GEMINI_MODEL`, …) override baked
+defaults and `.env`. Mount `state/` (`-v "$PWD/state:/app/state"`) for a shared, resumable run.
+Running without credentials fails fast.
+
 ## Test
 
 ```bash
-uv run pytest    # hermetic units: expansion, validation, history, stop conditions,
-                 # and the tool-less ADK agent posture — makes no network/LLM calls
+uv run pytest    # hermetic units: data expansion, validation, history, stop conditions, and the
+                 # tool-less ADK agent posture — makes no network/LLM calls
 ```
 
 For a real LLM round-trip, use the manual live smoke script (see **Live verification**).
+
+## Where to read more
+
+| Topic | Path |
+|-------|------|
+| The thesis story / long-term direction | `notes/research/paths/001-directional-research-memory-thesis-story.md` |
+| Governing principles (the constitution) | `.specify/memory/constitution.md` |
+| Spec roadmap toward the thesis | `notes/000-spec-list.md` |
+| Active build: memory-regime ablation | `specs/003-memory-compaction-ablation/` |
