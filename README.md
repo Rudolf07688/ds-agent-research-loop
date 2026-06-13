@@ -210,7 +210,7 @@ Provenance is verifiable on demand (no LLM calls) via the `ds-agent-memory` cons
 ```bash
 # verified replay: rebuild every decision's memory view from persisted history and assert its
 # content hash matches what was shown (exit non-zero + named iteration on any mismatch):
-uv run ds-agent-memory replay --cell wine|recent_only|s0|k3|m10
+uv run ds-agent-memory replay --cell 'wine|recent_only|s0|k3|m10'
 uv run ds-agent-memory replay --all
 
 # cross-regime audit: prove two cells of the same (member, seed) differ ONLY in memory — equal
