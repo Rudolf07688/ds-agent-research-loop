@@ -192,6 +192,36 @@ attributable. The loop (`main` / `experiment sweep`) resolves each member's desc
 split from this materialized suite — no dataset-specific code path. Full walkthrough +
 schema/API contracts: `specs/004-benchmark-harness/quickstart.md` and `.../contracts/`.
 
+## Memory regime as config + verified provenance (spec 005)
+
+The memory regime is **pure configuration**: select it per single run via `REGIME` (or `--regime`),
+keeping prompts, action space, allowlist, budget, frozen split, and scoring identical — only the
+memory shown to the agent changes. An unknown regime fails fast at startup (no silent default).
+
+```bash
+# run a member under a chosen regime (regime is the only thing that differs):
+REGIME=recent_only RECENT_K=5 uv run ds-agent-loop --member wine --seed 0
+REGIME=all_raw                 uv run ds-agent-loop --member wine --seed 0
+REGIME=compacted_recent        uv run ds-agent-loop --member wine --seed 0
+```
+
+Provenance is verifiable on demand (no LLM calls) via the `ds-agent-memory` console script:
+
+```bash
+# verified replay: rebuild every decision's memory view from persisted history and assert its
+# content hash matches what was shown (exit non-zero + named iteration on any mismatch):
+uv run ds-agent-memory replay --cell wine|recent_only|s0|k3|m10
+uv run ds-agent-memory replay --all
+
+# cross-regime audit: prove two cells of the same (member, seed) differ ONLY in memory — equal
+# config fingerprint (held-fixed factors, excluding regime/k/memory); fails loudly on contamination:
+uv run ds-agent-memory audit --cell-a 'wine|recent_only|s0|k3|m10' --cell-b 'wine|all_raw|s0|k0|m10'
+```
+
+The config fingerprint is stamped into each cell's `repro` (and the export `cells.csv`); no new
+tables or migration are added. Full walkthrough + API contract:
+`specs/005-memory-regime-abstraction/quickstart.md` and `.../contracts/provenance-api.md`.
+
 ## Live verification (manual, real Vertex AI call)
 
 The offline test suite is hermetic. To verify a real Gemini/Vertex round-trip (excluded from

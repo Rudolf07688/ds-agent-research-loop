@@ -6,8 +6,10 @@ provenance fields every view must carry."""
 
 from __future__ import annotations
 
+import pytest
+
 from ds_agent_loop import memory
-from ds_agent_loop.prompts import ExperimentRecord, MemoryRegime
+from ds_agent_loop.prompts import ExperimentRecord, MemoryRegime, Settings
 
 
 def _history(n: int) -> list[ExperimentRecord]:
@@ -101,3 +103,19 @@ def test_distinct_content_yields_distinct_hash():
     a = memory.build_view(MemoryRegime.recent_only, _history(3), k=3, cell_id="c", iteration=4)
     b = memory.build_view(MemoryRegime.all_raw, _history(3), k=3, cell_id="c", iteration=4)
     assert a.content_hash != b.content_hash
+
+
+# --- US1 (T010/T011): regime is pure configuration, fail-fast on unknown -----
+
+
+def test_settings_default_regime_is_recent_only():
+    assert Settings(_env_file=None).regime is MemoryRegime.recent_only
+
+
+def test_settings_selects_regime_from_config():
+    assert Settings(_env_file=None, regime="all_raw").regime is MemoryRegime.all_raw
+
+
+def test_settings_rejects_unknown_regime_fail_fast():
+    with pytest.raises(Exception):  # pydantic ValidationError — no silent default (FR-002)
+        Settings(_env_file=None, regime="not_a_regime")

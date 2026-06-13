@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
-from . import benchmark, compaction, data_gen, history, llm, memory
+from . import benchmark, compaction, data_gen, history, llm, memory, provenance
 from . import store as store_mod
 from .prompts import (
     CellStatus,
@@ -217,6 +217,14 @@ async def run_cell(
         log.info("cell_skipped_terminal", status=existing_cell.status.value)
         return existing_cell
 
+    # One regime / one k per cell for life (FR-012): a resume that changes the manipulated
+    # variable would break the controlled comparison — fail loudly rather than silently diverge.
+    if existing_cell is not None and (existing_cell.regime is not regime or existing_cell.k != k):
+        raise ValueError(
+            f"Cell '{cid}' was started under regime={existing_cell.regime.value} k={existing_cell.k}; "
+            f"refusing to resume it under regime={regime.value} k={k} (memory is the controlled variable)."
+        )
+
     history_records: list[ExperimentRecord] = store.get_records(cid)
     best_primary: float | None = None
     best_model = "none"
@@ -253,6 +261,10 @@ async def run_cell(
         last_iteration=len(history_records) or None,
         created_ts=existing_cell.created_ts if existing_cell else None,
     )
+    # Stamp the held-fixed-factor fingerprint (excludes regime/k/memory) so the cross-regime audit
+    # can prove memory was the only variable for this (member, seed) (FR-010; provenance.py).
+    repro_stamp["config_fingerprint"] = provenance.config_fingerprint(cell, descriptor)
+    cell = cell.model_copy(update={"repro": repro_stamp})
     store.upsert_cell(cell)
     if start_iter <= iterations:
         log.info("cell_started", regime=regime.value, seed=seed, k=k, m=m, budget=iterations, resume_from=start_iter)
@@ -505,11 +517,14 @@ def _parse_args(settings: Settings) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Run ONE memory-regime ablation cell (dataset × regime × seed × k × m)."
     )
-    parser.add_argument("--dataset", required=True, help="benchmark dataset id (e.g. delivery_time)")
     parser.add_argument(
-        "--regime", required=True,
+        "--member", "--dataset", dest="dataset", required=True,
+        help="benchmark member id, e.g. wine (alias: --dataset)",
+    )
+    parser.add_argument(
+        "--regime", default=settings.regime.value,
         choices=[r.value for r in MemoryRegime],
-        help="memory regime (the manipulated variable)",
+        help="memory regime (the manipulated variable); defaults to Settings.regime / REGIME",
     )
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--k", type=int, default=settings.recent_k)

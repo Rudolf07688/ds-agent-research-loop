@@ -159,6 +159,49 @@ class MemoryView(BaseModel):
     prompt_token_count: int
 
 
+class ReplayMismatch(BaseModel):
+    """One decision whose replayed memory view diverged from what was persisted (FR-009)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    iteration: int
+    expected_hash: str  # the stored MemoryView.content_hash / ExperimentRecord.memory_view_ref
+    actual_hash: str  # the hash of the view rebuilt from persisted history
+
+
+class ReplayResult(BaseModel):
+    """Outcome of verifying a cell's decisions are replayable from persisted state (US3, FR-008/009)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    cell_id: str
+    total: int = 0
+    matched: int = 0
+    mismatches: list[ReplayMismatch] = Field(default_factory=list)
+
+    @property
+    def ok(self) -> bool:
+        return self.total == self.matched and not self.mismatches
+
+
+class AuditResult(BaseModel):
+    """Outcome of auditing two cells as a memory-only comparison (US4, FR-010/011)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    cell_a: str
+    cell_b: str
+    same_member_seed: bool
+    fingerprint_equal: bool = False
+    differing_factor: str | None = None  # first contaminating held-fixed factor, if any
+    differing_dimension: str = ""  # the intended difference, e.g. "regime: recent_only -> all_raw"
+    reason: str = ""
+
+    @property
+    def ok(self) -> bool:
+        return self.same_member_seed and self.fingerprint_equal
+
+
 class ExperimentCell(BaseModel):
     """One ``(dataset × regime × seed × k × m)`` sweep unit (FR-014, Principles IX/XIII)."""
 
@@ -225,6 +268,11 @@ class Settings(BaseSettings):
         default_factory=lambda: ["recent_only", "all_raw", "compacted_recent"]
     )
     seeds: Annotated[list[int], NoDecode] = Field(default_factory=lambda: [0, 1, 2, 3, 4])
+    # Single-run memory regime (feature 005, FR-002): the regime is pure configuration, selected
+    # per run via ``REGIME`` (the loop body has no regime branch beyond the build_view seam). Typed
+    # as the enum so an unknown/malformed value fails fast at ``Settings()`` construction — never a
+    # silent default. The sweep path keeps the ``regimes`` list above.
+    regime: MemoryRegime = MemoryRegime.recent_only
     recent_k: int = 5
     compaction_m: int = 10
     # Optional FR-024 secondary trigger; off by default.

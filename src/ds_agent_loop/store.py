@@ -765,12 +765,13 @@ def export(store: Any, out_dir: str | Path, *, outcomes: dict[str, Any] | None =
     with (out / "cells.csv").open("w", newline="") as fh:
         writer = csv.writer(fh)
         writer.writerow(
-            ["cell_id", "dataset_id", "regime", "seed", "k", "m", "budget", "status", "last_iteration", "error"]
+            ["cell_id", "dataset_id", "regime", "seed", "k", "m", "budget", "status",
+             "last_iteration", "config_fingerprint", "error"]
         )
         for c in all_cells:
             writer.writerow(
                 [c.cell_id, c.dataset_id, c.regime.value, c.seed, c.k, c.m, c.budget,
-                 c.status.value, c.last_iteration, c.error or ""]
+                 c.status.value, c.last_iteration, c.repro.get("config_fingerprint", ""), c.error or ""]
             )
 
     for c in all_cells:

@@ -25,6 +25,7 @@ dependencies = [
 
 [project.scripts]
 ds-agent-loop = "ds_agent_loop.main:main"
+ds-agent-memory = "ds_agent_loop.provenance:main"
 
 [build-system]
 requires = ["uv_build>=0.11.7,<0.12.0"]

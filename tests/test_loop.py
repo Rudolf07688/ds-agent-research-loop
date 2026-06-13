@@ -9,6 +9,7 @@ from ds_agent_loop import main
 from ds_agent_loop import store as S
 from ds_agent_loop.prompts import (
     CellStatus,
+    ExperimentCell,
     MemoryRegime,
     NextAction,
     NextStepDecision,
@@ -178,3 +179,56 @@ def test_loop_resolves_member_from_materialized_suite_and_records_stop_reason(tm
     # the frozen split the loop scored on is the materialized one
     assert split.content_hash == store.get_benchmark_split("diabetes", B.BENCHMARK_VERSION)["content_hash"]
     assert cell.repro.get("stop_reason") in ("budget", "agent_stop")
+
+
+# ===========================================================================
+# Feature 005 — US2 provenance, resume guard (FR-012), context-limit (FR-007)
+# ===========================================================================
+
+
+def test_every_decision_has_a_persisted_linked_view(tmp_path):
+    """US2/SC-003: each iteration persists a hashed, correctly-keyed view linked from the record."""
+    store = S.FakeStore()
+    B.materialize_suite(store, ["diabetes"])
+    cell = _run_member(store, "diabetes", propose=_propose("RandomForestRegressor"), state_dir=tmp_path)
+    records = store.get_records(cell.cell_id)
+    views = {v.iteration: v for v in store.get_views(cell.cell_id)}
+    assert set(views) == {r.iteration for r in records}  # one view per decision (T014)
+    for r in records:
+        v = views[r.iteration]
+        assert v.cell_id == cell.cell_id and len(v.content_hash) == 64
+        assert r.memory_view_ref == v.content_hash  # decision links its exact view (T013)
+
+
+def test_resume_with_changed_regime_is_rejected(tmp_path):
+    """FR-012/T029: a cell is one regime/k for life; a mismatched resume fails loudly."""
+    store = S.FakeStore()
+    B.materialize_suite(store, ["diabetes"])
+    descriptor, split, _ = B.load_member(store, "diabetes")
+    # Persist a running cell under recent_only, then attempt to drive the SAME cell_id under all_raw.
+    cid = main.cell_id_for("diabetes", MemoryRegime.recent_only, 0, 3, 10)
+    store.upsert_cell(
+        ExperimentCell(cell_id=cid, dataset_id="diabetes", regime=MemoryRegime.all_raw,
+                       seed=0, k=3, m=10, budget=4, status=CellStatus.running)
+    )
+    import pytest
+    with pytest.raises(ValueError, match="controlled variable"):
+        asyncio.run(main.run_cell(
+            descriptor, MemoryRegime.recent_only, seed=0, k=3, m=10, iterations=4,
+            store=store, settings=_settings(), state_dir=tmp_path, split=split,
+            propose=_propose("RandomForestRegressor"),
+        ))
+
+
+def test_all_raw_context_limit_halts_and_records_context_limited(tmp_path):
+    """FR-007 (G1): an all_raw view over the token limit halts the cell, never silently truncated."""
+    store = S.FakeStore()
+    B.materialize_suite(store, ["diabetes"])
+    descriptor, split, _ = B.load_member(store, "diabetes")
+    cell = asyncio.run(main.run_cell(
+        descriptor, MemoryRegime.all_raw, seed=0, k=0, m=10, iterations=8,
+        store=store, settings=_settings(), state_dir=tmp_path, split=split,
+        propose=_propose("RandomForestRegressor"), context_token_limit=1,
+    ))
+    assert cell.status is CellStatus.context_limited
+    assert cell.repro.get("stop_reason") == "context_limited"
