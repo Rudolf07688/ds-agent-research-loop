@@ -8,7 +8,8 @@
     "GOOGLE_GENAI_USE_VERTEXAI": "TRUE"
   },
   "mounts": [
-    "source=${localEnv:HOME}/.config/gcloud,target=/root/.config/gcloud,type=bind,readonly"
+    "source=${localEnv:HOME}/.config/gcloud,target=/root/.config/gcloud,type=bind,readonly",
+    "source=${localEnv:HOME}/.ssh,target=/root/.ssh,type=bind,readonly"
   ],
   "features": {
     "ghcr.io/devcontainers/features/common-utils:2": {

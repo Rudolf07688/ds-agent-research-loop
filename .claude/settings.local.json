@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git -C /Users/rudolf/dev/gen-ai/ds-agent-loop rev-parse --is-inside-work-tree)",
+      "Bash(.specify/extensions/git/scripts/bash/create-new-feature.sh *)",
+      "Bash(.specify/scripts/bash/setup-plan.sh *)",
+      "Bash(.specify/scripts/bash/check-prerequisites.sh *)",
+      "Bash(.specify/scripts/bash/setup-tasks.sh *)",
+      "Bash(uv --version)",
+      "Bash(.venv/bin/python --version)",
+      "Bash(uv python *)",
+      "Bash(uv sync *)",
+      "Bash(uv run *)",
+      "Bash(.specify/extensions/git/scripts/bash/auto-commit.sh after_implement *)",
+      "Bash(.specify/extensions/git/scripts/bash/auto-commit.sh after_constitution)",
+      "Bash(echo \"exit:$?\")",
+      "Bash(git add *)",
+      "Bash(git reset *)",
+      "Bash(grep -nE '\\\\[[A-Z_]{3,}\\\\]' .specify/memory/constitution.md)"
+    ]
+  }
+}
