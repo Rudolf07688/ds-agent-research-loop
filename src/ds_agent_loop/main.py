@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import os
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -19,6 +20,7 @@ from . import benchmark, compaction, data_gen, history, llm, memory, provenance
 from . import store as store_mod
 from .prompts import (
     CellStatus,
+    DirectionalMemory,
     ExperimentCell,
     ExperimentRecord,
     MemoryRegime,
@@ -169,6 +171,42 @@ async def _default_propose(
         metric=metric,
         goal_word=goal_word,
     )
+
+
+# ---------------------------------------------------------------------------
+# Offline stubs (STUB_LLM=1) — deterministic, no-network agent + compactor, mirroring
+# entrypoint/run.py so a single cell runs end-to-end without Vertex credentials.
+# ---------------------------------------------------------------------------
+
+
+def _stub_enabled() -> bool:
+    return os.getenv("STUB_LLM", "").lower() in ("1", "true", "yes")
+
+
+async def _stub_propose(
+    settings, *, memory_text, allowlist, best_summary, dataset_summary, metric, goal_word
+) -> NextStepDecision:
+    """Deterministic, offline next-step proposer: switch to the second allowlisted model."""
+
+    model = allowlist[1] if len(allowlist) > 1 else allowlist[0]
+    return NextStepDecision(
+        action=NextAction.switch_model, model_name=model, hyperparameters={}, reason="stub"
+    )
+
+
+async def _stub_compactor(settings, *, source_records, descriptor) -> dict:
+    """Deterministic, offline Directional Research Memory artifact."""
+
+    return DirectionalMemory(
+        confirmed_findings=[f"{len(source_records)} experiments compacted"],
+        failed_directions=[],
+        promising_directions=["keep exploring allowlisted models"],
+        best_known_configs=[],
+        unresolved_questions=[],
+        next_step_recommendation="continue",
+        confidence=0.5,
+        rationale="stub compaction",
+    ).model_dump(mode="json")
 
 
 async def run_cell(
@@ -563,10 +601,19 @@ async def _run_single_cell(args: argparse.Namespace, settings: Settings) -> Expe
     descriptor, split, _ = benchmark.load_member(store, args.dataset, version=settings.benchmark_version)
     regime = MemoryRegime(args.regime)
     compactor = compaction.compact if regime is MemoryRegime.compacted_recent else None
+    propose = None
+    # STUB_LLM=1: run the cell with the deterministic, offline proposer/compactor (no Vertex
+    # calls) — the same stubs the container sweep uses (entrypoint/run.py). Lets the demo and
+    # plumbing checks run a full single cell without credentials. Real runs leave it unset.
+    if _stub_enabled():
+        propose = _stub_propose
+        if compactor is not None:
+            compactor = _stub_compactor
     return await run_cell(
         descriptor, regime, args.seed,
         k=args.k, m=args.m, iterations=args.iterations,
         store=store, settings=settings, state_dir=STATE_DIR,
+        propose=propose,
         split=split, compactor=compactor, context_token_limit=args.context_token_limit,
         compaction_token_threshold=settings.compaction_token_threshold,
     )
