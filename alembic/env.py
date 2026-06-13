@@ -20,7 +20,11 @@ config = context.config
 
 if config.config_file_name is not None:
     try:
-        fileConfig(config.config_file_name)
+        # disable_existing_loggers defaults to True, which would silence the
+        # application's already-created loggers (e.g. ds_agent_loop.run, set up at
+        # import time) — dropping every per-iteration run log to the console. Keep
+        # them alive so a live run is diagnosable from stdout (Principle X).
+        fileConfig(config.config_file_name, disable_existing_loggers=False)
     except Exception:
         pass
 

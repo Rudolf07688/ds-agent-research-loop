@@ -713,6 +713,9 @@ if not _stdout_logger.handlers:
     _handler.setFormatter(logging.Formatter("%(message)s"))
     _stdout_logger.addHandler(_handler)
     _stdout_logger.setLevel(logging.INFO)
+    # Own handler only — don't also bubble to the root logger (alembic.ini installs a
+    # root stdout handler), which would print every run event twice.
+    _stdout_logger.propagate = False
 
 
 class CellLogger:
