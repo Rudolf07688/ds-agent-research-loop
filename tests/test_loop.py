@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import main
-from prompts import NextAction, NextStepDecision
+from ds_agent_loop import main
+from ds_agent_loop.prompts import NextAction, NextStepDecision
 
 
 # --- US4: T022 — rejection retains the prior model --------------------------

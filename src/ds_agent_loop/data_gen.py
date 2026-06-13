@@ -16,9 +16,9 @@ import numpy as np
 import pandas as pd
 from pydantic import ValidationError
 
-import llm
-from prompts import DataSpec, DeliveryRecord, Settings
-from train import FEATURE_COLUMNS, TARGET_COLUMN
+from . import llm
+from .prompts import DataSpec, DeliveryRecord, Settings
+from .train import FEATURE_COLUMNS, TARGET_COLUMN
 
 STATE_DIR = Path("state")
 SEED_ROWS_FILE = "seed_rows.json"

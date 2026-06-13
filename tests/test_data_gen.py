@@ -7,8 +7,8 @@ import json
 
 import pytest
 
-import data_gen
-from prompts import DataSpec, DeliveryRecord, Settings
+from ds_agent_loop import data_gen
+from ds_agent_loop.prompts import DataSpec, DeliveryRecord, Settings
 
 SPEC = DataSpec(
     features=["item_count", "distance_km", "traffic_level", "is_raining", "hour_of_day"],

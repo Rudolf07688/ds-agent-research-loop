@@ -12,7 +12,7 @@ from pathlib import Path
 
 from pydantic_settings import SettingsConfigDict
 
-from prompts import Settings
+from ds_agent_loop import Settings
 
 
 class RunConfig(Settings):

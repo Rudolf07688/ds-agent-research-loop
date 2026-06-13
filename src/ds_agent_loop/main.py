@@ -15,11 +15,15 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
-import data_gen
-import history
-import llm
-from prompts import NextAction, NextStepDecision, RunRecord, Settings
-from train import BASELINE_MODEL, MODEL_ALLOWLIST, ValidationRejected, score_model, validate_decision
+from . import data_gen, history, llm
+from .prompts import NextAction, NextStepDecision, RunRecord, Settings
+from .train import (
+    BASELINE_MODEL,
+    MODEL_ALLOWLIST,
+    ValidationRejected,
+    score_model,
+    validate_decision,
+)
 
 STATE_DIR = Path("state")
 OUTPUTS_DIR = Path("outputs")

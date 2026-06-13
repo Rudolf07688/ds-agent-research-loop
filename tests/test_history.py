@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import history
-from prompts import RunRecord
+from ds_agent_loop import history
+from ds_agent_loop.prompts import RunRecord
 
 
 def _record(iteration: int, rmse: float) -> RunRecord:

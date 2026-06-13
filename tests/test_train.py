@@ -6,9 +6,9 @@ import numpy as np
 import pandas as pd
 import pytest
 
-import train
-from prompts import NextAction, NextStepDecision
-from train import FEATURE_COLUMNS, TARGET_COLUMN
+from ds_agent_loop import train
+from ds_agent_loop.prompts import NextAction, NextStepDecision
+from ds_agent_loop.train import FEATURE_COLUMNS, TARGET_COLUMN
 
 
 def _toy_dataset(n: int = 60) -> pd.DataFrame:

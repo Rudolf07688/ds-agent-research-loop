@@ -21,7 +21,7 @@ from sklearn.model_selection import KFold, cross_validate
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder
 
-from prompts import NextAction, NextStepDecision
+from .prompts import NextAction, NextStepDecision
 
 # Fixed set of approved regressors the LLM may choose from. Anything else is rejected.
 MODEL_ALLOWLIST: dict[str, type] = {

@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from prompts import RunRecord
+from .prompts import RunRecord
 
 STATE_DIR = Path("state")
 HISTORY_FILE = "history.json"

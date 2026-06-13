@@ -15,7 +15,7 @@ from typing import TypeVar
 from openai import AsyncOpenAI
 from pydantic import BaseModel, ValidationError
 
-from prompts import (
+from .prompts import (
     NEXT_STEP_SCHEMA,
     NEXT_STEP_SYSTEM,
     SEED_GENERATION_SCHEMA,

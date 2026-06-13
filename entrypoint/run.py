@@ -12,17 +12,15 @@ Run from the repository root:
 from __future__ import annotations
 
 import asyncio
-import sys
 from datetime import datetime
 from pathlib import Path
 
-# Make the flat library modules importable when invoked as a script.
+from ds_agent_loop import run_loop  # the single library entrypoint
+from ds_agent_loop.main import SUMMARY_FILE
+
+from config import load_config
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(REPO_ROOT))
-
-from main import SUMMARY_FILE, run_loop  # the single library entrypoint  # noqa: E402
-
-from config import load_config  # noqa: E402
 
 
 def main() -> None:
