@@ -44,7 +44,20 @@ def _record_view(record: ExperimentRecord) -> dict:
 def _render_raw(records: list[ExperimentRecord]) -> str:
     if not records:
         return "No prior experiments yet."
-    return json.dumps([_record_view(r) for r in records], indent=2)
+    # sort_keys keeps the rendered text — and thus the view content hash — invariant to dict key
+    # order, so a view rebuilt from JSONB-reloaded records (Postgres does not preserve key order)
+    # hashes identically to the one built in-memory at decision time. Without this, replay
+    # (provenance.verify_cell) reports spurious per-iteration mismatches.
+    return json.dumps([_record_view(r) for r in records], indent=2, sort_keys=True)
+
+
+def _render_item(it: object) -> str:
+    """Canonical one-item rendering. Dict items (e.g. best-known configs) are emitted with
+    sorted keys so a JSONB round-trip can't reorder them and perturb the view hash."""
+
+    if isinstance(it, dict):
+        return json.dumps(it, sort_keys=True)
+    return str(it)
 
 
 def _render_artifact(artifact: dict) -> str:
@@ -53,7 +66,7 @@ def _render_artifact(artifact: dict) -> str:
     def _lines(label: str, items: list) -> str:
         if not items:
             return f"{label}: (none)"
-        return label + ":\n" + "\n".join(f"  - {it}" for it in items)
+        return label + ":\n" + "\n".join(f"  - {_render_item(it)}" for it in items)
 
     parts = [
         "DIRECTIONAL RESEARCH MEMORY (compacted prior history):",

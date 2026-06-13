@@ -11,6 +11,8 @@ from __future__ import annotations
 import pytest
 from sqlalchemy import text
 
+from ds_agent_loop import memory as M
+from ds_agent_loop import provenance as P
 from ds_agent_loop import store as S
 from ds_agent_loop.prompts import (
     CellStatus,
@@ -87,6 +89,44 @@ def test_real_artifact_and_logs_roundtrip(pg_store):
     assert len(arts) == 1 and arts[0]["artifact"]["confirmed_findings"] == ["y"]
     S.get_logger(pg_store, _TEST_CELL).info("iteration_done", iteration=1, rmse=42.0)
     assert any(line["event"] == "iteration_done" for line in pg_store.get_logs(_TEST_CELL))
+
+
+def test_real_replay_is_invariant_to_jsonb_key_order(pg_store):
+    """Regression: replay (provenance.verify_cell) must hold against the REAL store.
+
+    The loop hashes each memory view from in-memory records (dict insertion order), but Postgres
+    JSONB does not preserve key order, so a view rebuilt from reloaded records once rendered in a
+    different byte order and hashed differently — verify_cell reported spurious mismatches on every
+    cell. FakeStore can't catch this (it round-trips Python objects verbatim). We persist records
+    whose ``test_metrics`` keys are deliberately NON-alphabetical, reproduce the loop's per-decision
+    hashing, and assert every recorded decision still replays through real Postgres.
+    """
+
+    pg_store.upsert_cell(_cell(CellStatus.running))
+
+    # Mirror the loop: build each view from the in-memory history seen at decision time and stamp
+    # the resulting content hash onto the record, exactly as main.run_cell does. The metrics dict is
+    # written most-significant-key-first (non-alphabetical) so JSONB reordering is exercised.
+    history: list[ExperimentRecord] = []
+    for i in range(1, 6):
+        view = M.build_view(
+            MemoryRegime.all_raw, history, k=5, cell_id=_TEST_CELL, iteration=i, latest_artifact=None
+        )
+        rec = ExperimentRecord(
+            iteration=i, dataset_size=265, model_name="LinearRegression",
+            # Insertion order (macro_f1, accuracy) is NOT alphabetical, so a JSONB round-trip
+            # reorders the keys (accuracy, macro_f1) and would perturb the view hash pre-fix.
+            metrics={"macro_f1": 0.9 + i / 100, "accuracy": 0.8 + i / 100},
+            test_metrics={"macro_f1": 0.9 + i / 100, "accuracy": 0.8 + i / 100},
+            rationale="x", timestamp="t", cell_id=_TEST_CELL, dataset_id="diabetes",
+            regime=MemoryRegime.all_raw, seed=0, k=5, m=10, memory_view_ref=view.content_hash,
+        )
+        pg_store.append_record(rec)
+        history.append(rec)
+
+    result = P.verify_cell(pg_store, _TEST_CELL)
+    assert result.ok, f"replay mismatched after JSONB round-trip: {result.mismatches}"
+    assert result.matched == result.total == 5
 
 
 # --- feature 006: recorded cadence + lineage against the REAL store ----------
