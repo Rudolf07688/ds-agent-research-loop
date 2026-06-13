@@ -1,0 +1,25 @@
+# gitleaks config for this project.
+# The Google Cloud config variables (project ID, region, model name) are not secrets —
+# they're publicly used defaults. This file tells gitleaks to ignore them so the pre-build
+# check doesn't cry wolf on legitimate config.
+
+title = "ds-agent-loop"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Google Cloud config that is intentionally public"
+regexes = [
+    # GCP project IDs and locations are not secrets
+    '''GOOGLE_CLOUD_PROJECT\s*=\s*\S+''',
+    '''GOOGLE_CLOUD_LOCATION\s*=\s*\S+''',
+    # Vertex AI / genai mode flag
+    '''GOOGLE_GENAI_USE_VERTEXAI\s*=\s*(TRUE|FALSE|true|false)''',
+    # Model identifiers (e.g. gemini-3.5-flash) are not secrets
+    '''GEMINI_MODEL\s*=\s*\S+''',
+    # Integer run params
+    '''(N_ITERATIONS|PATIENCE|TARGET_SIZE)\s*=\s*\d+''',
+    # Metric name strings
+    '''PRIMARY_METRIC\s*=\s*\S+''',
+]

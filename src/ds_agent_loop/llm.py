@@ -1,24 +1,31 @@
-"""Thin async LLM wrapper.
+"""Thin LLM wrapper: Google Gemini on Vertex AI, hosted by a minimal ADK agent.
 
-Exposes one generic helper that performs a JSON-schema-constrained request against an
-OpenAI-compatible endpoint and validates the response into a Pydantic model. The two
-sanctioned calls (seed generation, next step) build on this helper. The LLM never
-returns code the system executes (Constitution Principle III); it only returns JSON that
-Python validates and acts on.
+Each of the two sanctioned calls (seed generation, next step) is hosted by its own
+minimal ADK ``LlmAgent`` configured with a Pydantic ``output_schema`` and **no tools**.
+Setting ``output_schema`` makes the agent emit structured JSON validated against the
+schema and disables tool/transfer use — which is exactly the bounded-agency posture the
+constitution requires (Principles II & III): the LLM only returns JSON that Python
+validates and acts on, never code the system executes.
+
+Authentication is Application Default Credentials (ADC); the Vertex project/location and
+the Gemini model come from the centralized ``Settings``. The module's public surface
+(``generate_seed`` / ``request_next_step`` / ``LLMError``) is unchanged so the rest of the
+library is agnostic to the backend.
 """
 
 from __future__ import annotations
 
 import json
+import os
 from typing import TypeVar
 
-from openai import AsyncOpenAI
+from google.adk.agents import LlmAgent
+from google.adk.runners import InMemoryRunner
+from google.genai import types
 from pydantic import BaseModel, ValidationError
 
 from .prompts import (
-    NEXT_STEP_SCHEMA,
     NEXT_STEP_SYSTEM,
-    SEED_GENERATION_SCHEMA,
     SEED_GENERATION_SYSTEM,
     SEED_GENERATION_USER,
     NextStepDecision,
@@ -29,74 +36,101 @@ from .prompts import (
 
 T = TypeVar("T", bound=BaseModel)
 
+APP_NAME = "ds-agent-loop"
+USER_ID = "loop"
+
 
 class LLMError(RuntimeError):
     """Raised when the LLM call fails or returns malformed/invalid output."""
 
 
-def build_client(settings: Settings) -> AsyncOpenAI:
-    """Construct an async OpenAI-compatible client from centralized settings."""
+def _configure_vertex(settings: Settings) -> None:
+    """Point the ADK/``google.genai`` backend at Vertex AI from centralized settings.
 
-    if not settings.llm_api_key:
-        raise LLMError(
-            "Missing LLM API key. Set LLM_API_KEY in your .env (see .env.example)."
-        )
-    kwargs: dict[str, object] = {"api_key": settings.llm_api_key}
-    if settings.llm_base_url:
-        kwargs["base_url"] = settings.llm_base_url
-    return AsyncOpenAI(**kwargs)
-
-
-async def request_structured(
-    settings: Settings,
-    *,
-    system: str,
-    user: str,
-    schema: dict,
-    schema_name: str,
-    model_cls: type[T],
-    client: AsyncOpenAI | None = None,
-) -> T:
-    """Make one schema-constrained chat request and validate it into ``model_cls``.
-
-    The provider is asked to return JSON conforming to ``schema``; the raw JSON is then
-    re-validated through the Pydantic model so malformed or incomplete output is rejected
-    rather than trusted.
+    ADK builds its ``google.genai`` client from these environment variables; Settings is
+    the single source of truth (Principle VIII) and is pushed into the environment here.
+    Credentials themselves are ADC — discovered from the environment, never stored here.
     """
 
-    own_client = client is None
-    client = client or build_client(settings)
-    try:
-        response = await client.chat.completions.create(
-            model=settings.llm_model,
-            messages=[
-                {"role": "system", "content": system},
-                {"role": "user", "content": user},
-            ],
-            response_format={
-                "type": "json_schema",
-                "json_schema": {
-                    "name": schema_name,
-                    "schema": schema,
-                    "strict": False,
-                },
-            },
-        )
-    except Exception as exc:  # network / API errors
-        raise LLMError(f"LLM request failed: {exc}") from exc
-    finally:
-        if own_client:
-            await client.close()
+    os.environ["GOOGLE_GENAI_USE_VERTEXAI"] = "TRUE" if settings.use_vertexai else "FALSE"
+    os.environ["GOOGLE_CLOUD_PROJECT"] = settings.google_cloud_project
+    os.environ["GOOGLE_CLOUD_LOCATION"] = settings.google_cloud_location
 
-    content = response.choices[0].message.content
-    if not content:
-        raise LLMError("LLM returned an empty response.")
+
+def _build_agent(
+    settings: Settings,
+    *,
+    name: str,
+    instruction: str,
+    output_schema: type[BaseModel],
+    output_key: str,
+) -> LlmAgent:
+    """Construct a minimal, tool-less ADK agent for one sanctioned structured call."""
+
+    return LlmAgent(
+        name=name,
+        model=settings.gemini_model,
+        instruction=instruction,
+        output_schema=output_schema,
+        output_key=output_key,
+        tools=[],
+        disallow_transfer_to_parent=True,
+        disallow_transfer_to_peers=True,
+    )
+
+
+async def _run_structured(
+    settings: Settings,
+    *,
+    name: str,
+    instruction: str,
+    user: str,
+    output_schema: type[T],
+    output_key: str,
+) -> T:
+    """Run one minimal ADK agent and validate its structured output into ``output_schema``.
+
+    The agent is asked to return JSON conforming to ``output_schema``; the result stored in
+    session state is re-validated through the Pydantic model so malformed or incomplete
+    output is rejected rather than trusted.
+    """
+
+    _configure_vertex(settings)
+    agent = _build_agent(
+        settings,
+        name=name,
+        instruction=instruction,
+        output_schema=output_schema,
+        output_key=output_key,
+    )
+    runner = InMemoryRunner(agent=agent, app_name=APP_NAME)
+    message = types.Content(role="user", parts=[types.Part.from_text(text=user)])
     try:
-        payload = json.loads(content)
-    except json.JSONDecodeError as exc:
-        raise LLMError(f"LLM returned non-JSON content: {exc}") from exc
+        session = await runner.session_service.create_session(
+            app_name=APP_NAME, user_id=USER_ID
+        )
+        async for _event in runner.run_async(
+            user_id=USER_ID, session_id=session.id, new_message=message
+        ):
+            pass
+        session = await runner.session_service.get_session(
+            app_name=APP_NAME, user_id=USER_ID, session_id=session.id
+        )
+    except Exception as exc:  # auth / network / API errors -> fail fast (FR-009)
+        raise LLMError(f"Gemini/Vertex request failed: {exc}") from exc
+
+    raw = None if session is None else session.state.get(output_key)
+    if raw is None:
+        raise LLMError("Agent returned no structured output.")
+    if isinstance(raw, BaseModel):
+        raw = raw.model_dump()
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            raise LLMError(f"Agent returned non-JSON content: {exc}") from exc
     try:
-        return model_cls.model_validate(payload)
+        return output_schema.model_validate(raw)
     except ValidationError as exc:
         raise LLMError(f"LLM output failed schema validation: {exc}") from exc
 
@@ -104,13 +138,13 @@ async def request_structured(
 async def generate_seed(settings: Settings) -> SeedGeneration:
     """Seed-generation call: request seed_rows + a reusable data_spec (US1)."""
 
-    return await request_structured(
+    return await _run_structured(
         settings,
-        system=SEED_GENERATION_SYSTEM,
+        name="seed_generation",
+        instruction=SEED_GENERATION_SYSTEM,
         user=SEED_GENERATION_USER,
-        schema=SEED_GENERATION_SCHEMA,
-        schema_name="seed_generation",
-        model_cls=SeedGeneration,
+        output_schema=SeedGeneration,
+        output_key="seed_generation",
     )
 
 
@@ -123,11 +157,11 @@ async def request_next_step(
 ) -> NextStepDecision:
     """Next-step call: reason over history and return a constrained decision (US4)."""
 
-    return await request_structured(
+    return await _run_structured(
         settings,
-        system=NEXT_STEP_SYSTEM,
+        name="next_step",
+        instruction=NEXT_STEP_SYSTEM,
         user=next_step_user(history_json, allowlist, best_summary),
-        schema=NEXT_STEP_SCHEMA,
-        schema_name="next_step",
-        model_cls=NextStepDecision,
+        output_schema=NextStepDecision,
+        output_key="next_step",
     )

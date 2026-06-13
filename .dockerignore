@@ -1,0 +1,40 @@
+# Never bake secrets or credentials into the image.
+# `.env` itself IS baked in (if present) to seed non-secret defaults — project, location,
+# model, run params — so the image runs with almost no setup. Per .env.example, credentials
+# MUST NEVER live in .env; they are mounted at run time. Block all OTHER *.env files and any
+# credential material so nothing secret sneaks into the image.
+*.env
+!.env
+**/application_default_credentials.json
+**/*-key.json
+**/*.pem
+
+# Local virtualenv / VCS / caches
+.venv/
+venv/
+.git/
+.gitignore
+__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+*.egg-info/
+dist/
+build/
+
+# Runtime artifacts (mounted at run time, not part of the image)
+state/
+outputs/
+entrypoint/runs/
+
+# Specs / notes / docs not needed to run the loop
+specs/
+notes/
+.specify/
+
+# OS / editor
+.DS_Store
+*.swp
+.idea/
+.vscode/

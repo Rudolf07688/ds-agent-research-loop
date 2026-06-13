@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>002 — Vertex/Gemini + ADK Re-platform · Progress</title>
+<style>
+  body { font-family: -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+         max-width: 880px; margin: 2rem auto; padding: 0 1rem; color: #1b1b1f; line-height: 1.5; }
+  h1 { font-size: 1.5rem; } h2 { font-size: 1.15rem; margin-top: 1.8rem; border-bottom: 1px solid #ddd; padding-bottom: .25rem; }
+  code { background: #f2f2f5; padding: .1rem .3rem; border-radius: 4px; font-size: .9em; }
+  table { border-collapse: collapse; width: 100%; margin: .5rem 0; }
+  th, td { border: 1px solid #ddd; padding: .4rem .55rem; text-align: left; font-size: .92rem; vertical-align: top; }
+  th { background: #f7f7fa; }
+  .done { color: #0a7d28; font-weight: 600; } .todo { color: #b06a00; font-weight: 600; }
+  .muted { color: #666; } .pill { display: inline-block; background: #eef; border-radius: 999px; padding: .1rem .6rem; font-size: .8rem; }
+</style>
+</head>
+<body>
+<h1>Feature 002 — Re-platform onto Google Vertex AI + Gemini (ADK)</h1>
+<p class="muted">Branch <code>002-live-tests-containerize</code> · snapshot 2026-06-13 · constitution v2.0.0</p>
+
+<p>Replaced the OpenAI-compatible LLM client with <strong>Google Gemini on Vertex AI</strong>
+(<code>google.genai</code>) hosted by a <strong>minimal ADK agent</strong> (one tool-less
+<code>LlmAgent</code> per call, <code>output_schema</code>-validated), then added a manual live
+verification script and a containerized deployment. The two schemas, model allowlist, and
+bounded-agency rules are unchanged.</p>
+
+<h2>Status by task</h2>
+<table>
+  <tr><th>Phase</th><th>Tasks</th><th>State</th></tr>
+  <tr><td>1 · Setup</td><td>T001 Python 3.13 pin · T002 deps swap (openai → google-genai/google-adk) · T003 uv sync</td><td class="done">done</td></tr>
+  <tr><td>2 · Foundational</td><td>T004 Settings (Vertex fields) · T005 .env.example rewrite</td><td class="done">done</td></tr>
+  <tr><td>3 · US1 re-platform</td><td>T006–T008 rewrite <code>llm.py</code> · T009 verify untouched modules · T010 offline tests · T011 pytest green (24 passed)</td><td class="done">done</td></tr>
+  <tr><td>4 · US2 live verify</td><td>T012 <code>entrypoint/smoke_live.py</code></td><td class="done">code done</td></tr>
+  <tr><td></td><td>T013 perform live run + assert SC-003/004/005/006</td><td class="todo">operator action (needs ADC)</td></tr>
+  <tr><td>5 · US3 container</td><td>T014 <code>.dockerignore</code> · T015 <code>Dockerfile</code></td><td class="done">code done</td></tr>
+  <tr><td></td><td>T016 build + run on a clean machine, verify persistence/no-secrets</td><td class="todo">operator action (needs Docker + ADC)</td></tr>
+  <tr><td>6 · Polish</td><td>T017 README · T018 this snapshot</td><td class="done">done</td></tr>
+  <tr><td></td><td>T019 full quickstart validation pass</td><td class="todo">operator action (live)</td></tr>
+</table>
+
+<h2>What I could not run here</h2>
+<p>Tasks needing real Google Cloud credentials (ADC) or a Docker daemon — the live run
+(T013), the container build/run (T016), and the end-to-end quickstart (T019) — are written
+and ready but must be executed by the operator. The offline suite (<code>uv run pytest</code>,
+24 tests) passes with zero network calls.</p>
+
+<h2>Key decisions applied</h2>
+<ul>
+  <li><span class="pill">F1</span> Vertex mode is driven from <code>Settings</code> via
+      <code>_configure_vertex()</code> (single source of truth), not a mis-mapped env field.</li>
+  <li><span class="pill">F2</span> The live smoke script uses a <em>persistent</em> state dir so a
+      second run exercises resume (zero seed calls) — making the SC-004 check valid.</li>
+  <li>Bounded agency: agents are built with <code>tools=[]</code> and transfers disallowed;
+      asserted by an offline test.</li>
+</ul>
+
+<h2>How to verify (operator)</h2>
+<pre><code>gcloud auth application-default login
+uv run pytest
+uv run python entrypoint/smoke_live.py
+docker build -t ds-agent-loop . &amp;&amp; docker run --rm \
+  -e GOOGLE_CLOUD_PROJECT=research-se-gen-ai -e GOOGLE_APPLICATION_CREDENTIALS=/adc/key.json \
+  -v "$HOME/.config/gcloud/application_default_credentials.json:/adc/key.json:ro" \
+  -v "$PWD/entrypoint/runs:/app/entrypoint/runs" ds-agent-loop</code></pre>
+</body>
+</html>

@@ -23,9 +23,9 @@ description: "Task list for 002-live-tests-containerize"
 
 **Purpose**: Toolchain + dependency swap so the new backend can be installed
 
-- [ ] T001 Pin runtime to Python 3.13 by changing `.python-version` from `3.14` to `3.13` (research Decision 1); leave `requires-python = ">=3.11"` in `pyproject.toml`
-- [ ] T002 In `pyproject.toml`, remove the `openai` dependency and add `google-genai` and `google-adk` (research Decision 5)
-- [ ] T003 Run `uv sync` to resolve/lock the new deps on Python 3.13 and confirm `uv.lock` updates cleanly (verify research Decision 1)
+- [X] T001 Pin runtime to Python 3.13 by changing `.python-version` from `3.14` to `3.13` (research Decision 1); leave `requires-python = ">=3.11"` in `pyproject.toml`
+- [X] T002 In `pyproject.toml`, remove the `openai` dependency and add `google-genai` and `google-adk` (research Decision 5)
+- [X] T003 Run `uv sync` to resolve/lock the new deps on Python 3.13 and confirm `uv.lock` updates cleanly (verify research Decision 1)
 
 **Checkpoint**: Environment installs the Google SDK + ADK on a supported Python.
 
@@ -37,8 +37,8 @@ description: "Task list for 002-live-tests-containerize"
 
 **⚠️ CRITICAL**: US1–US3 cannot proceed until the Settings/env surface reflects Vertex/Gemini
 
-- [ ] T004 Modify `Settings` in `src/ds_agent_loop/prompts.py`: remove `llm_api_key`, `llm_base_url`, `llm_model`; add `google_cloud_project: str = "research-se-gen-ai"`, `google_cloud_location: str = "global"`, `gemini_model: str = "gemini-3.5-flash"`, `use_vertexai: bool = True` (data-model.md). Leave the run-parameter fields and all schemas/prompts in this file unchanged.
-- [ ] T005 [P] Rewrite `.env.example`: drop `LLM_API_KEY`/`LLM_MODEL`/`LLM_BASE_URL`; document ADC auth and the overridable `GOOGLE_CLOUD_PROJECT`/`GOOGLE_CLOUD_LOCATION`/`GEMINI_MODEL`/`GOOGLE_GENAI_USE_VERTEXAI` vars (contracts/config-and-runtime.md). Never include credentials.
+- [X] T004 Modify `Settings` in `src/ds_agent_loop/prompts.py`: remove `llm_api_key`, `llm_base_url`, `llm_model`; add `google_cloud_project: str = "research-se-gen-ai"`, `google_cloud_location: str = "global"`, `gemini_model: str = "gemini-3.5-flash"`, `use_vertexai: bool = True` (data-model.md). Leave the run-parameter fields and all schemas/prompts in this file unchanged.
+- [X] T005 [P] Rewrite `.env.example`: drop `LLM_API_KEY`/`LLM_MODEL`/`LLM_BASE_URL`; document ADC auth and the overridable `GOOGLE_CLOUD_PROJECT`/`GOOGLE_CLOUD_LOCATION`/`GEMINI_MODEL`/`GOOGLE_GENAI_USE_VERTEXAI` vars (contracts/config-and-runtime.md). Never include credentials.
 
 **Checkpoint**: Single source of truth points at Vertex/Gemini with the clarified defaults.
 
@@ -52,12 +52,12 @@ description: "Task list for 002-live-tests-containerize"
 
 ### Implementation for User Story 1
 
-- [ ] T006 [US1] Rewrite `src/ds_agent_loop/llm.py`: replace `AsyncOpenAI` with a `google.genai` client in Vertex mode (`genai.Client(vertexai=True, project=…, location=…)` driven by `Settings`); keep the module's public functions `generate_seed(settings)` and `request_next_step(settings, *, history_json, allowlist, best_summary)` and the `LLMError` type with identical signatures (research Decision 2/3, data-model.md).
-- [ ] T007 [US1] In `src/ds_agent_loop/llm.py`, implement a minimal ADK `LlmAgent` factory used by both calls: one agent with `output_schema=SeedGeneration`, one with `output_schema=NextStepDecision`, no tools/sub-agents, executed once via an in-memory runner; validate the structured result back through the existing Pydantic models (research Decision 3).
-- [ ] T008 [US1] In `src/ds_agent_loop/llm.py`, map auth/availability failures to `LLMError` so a missing/invalid ADC or a model that can't honor the schema fails fast with a clear message (FR-009; replaces the old `build_client` API-key check).
-- [ ] T009 [US1] Verify `src/ds_agent_loop/main.py`, `train.py`, `data_gen.py`, `history.py` need no changes (they call the preserved wrapper functions); make only adjustments required by the new `Settings` field names if any surface.
-- [ ] T010 [US1] Update `tests/` (notably `tests/test_loop.py`) to stub the ADK/`google.genai` agent instead of the OpenAI client, asserting exactly two structured calls and the rejection/allowlist path, with zero network access (FR-005).
-- [ ] T011 [US1] Run `uv run pytest` and confirm all offline units pass with no network calls (SC-001); confirm a bad-proposal test still rejects and retains the prior best model (SC-002 behavior).
+- [X] T006 [US1] Rewrite `src/ds_agent_loop/llm.py`: replace `AsyncOpenAI` with a `google.genai` client in Vertex mode (`genai.Client(vertexai=True, project=…, location=…)` driven by `Settings`); keep the module's public functions `generate_seed(settings)` and `request_next_step(settings, *, history_json, allowlist, best_summary)` and the `LLMError` type with identical signatures (research Decision 2/3, data-model.md).
+- [X] T007 [US1] In `src/ds_agent_loop/llm.py`, implement a minimal ADK `LlmAgent` factory used by both calls: one agent with `output_schema=SeedGeneration`, one with `output_schema=NextStepDecision`, no tools/sub-agents, executed once via an in-memory runner; validate the structured result back through the existing Pydantic models (research Decision 3).
+- [X] T008 [US1] In `src/ds_agent_loop/llm.py`, map auth/availability failures to `LLMError` so a missing/invalid ADC or a model that can't honor the schema fails fast with a clear message (FR-009; replaces the old `build_client` API-key check).
+- [X] T009 [US1] Verify `src/ds_agent_loop/main.py`, `train.py`, `data_gen.py`, `history.py` need no changes (they call the preserved wrapper functions); make only adjustments required by the new `Settings` field names if any surface.
+- [X] T010 [US1] Update `tests/` (notably `tests/test_loop.py`) to stub the ADK/`google.genai` agent instead of the OpenAI client, asserting exactly two structured calls and the rejection/allowlist path, with zero network access (FR-005).
+- [X] T011 [US1] Run `uv run pytest` and confirm all offline units pass with no network calls (SC-001); confirm a bad-proposal test still rejects and retains the prior best model (SC-002 behavior).
 
 **Checkpoint**: The loop is fully re-platformed and offline-verifiable; the OpenAI client is gone (FR-001).
 
@@ -71,7 +71,7 @@ description: "Task list for 002-live-tests-containerize"
 
 ### Implementation for User Story 2
 
-- [ ] T012 [US2] Add `entrypoint/smoke_live.py`: a manual live-verification script (NOT under `tests/`, excluded from `pytest`) that performs one real run and asserts SC outcomes — seed files created by exactly one seed call, iterations complete, `entrypoint/runs/run_<dt>/results.text` written, `state/history.json` + `state/best_run.json` populated (FR-005, FR-010).
+- [X] T012 [US2] Add `entrypoint/smoke_live.py`: a manual live-verification script (NOT under `tests/`, excluded from `pytest`) that performs one real run and asserts SC outcomes — seed files created by exactly one seed call, iterations complete, `entrypoint/runs/run_<dt>/results.text` written, `state/history.json` + `state/best_run.json` populated (FR-005, FR-010).
 - [ ] T013 [US2] Perform the live run per `quickstart.md` (`gcloud auth application-default login`; `uv run python entrypoint/smoke_live.py`) and verify SC-003 (history+metrics+rationale, best ≤ baseline), SC-004 (exactly one seed round-trip; zero on resume), SC-005, and the fail-fast-without-credentials case (SC-006). Record results in `notes/`.
 
 **Checkpoint**: Live round-trip against Vertex/Gemini confirmed; resume verified.
@@ -86,8 +86,8 @@ description: "Task list for 002-live-tests-containerize"
 
 ### Implementation for User Story 3
 
-- [ ] T014 [P] [US3] Add `.dockerignore` excluding `.venv/`, `.git/`, `state/`, `outputs/`, `entrypoint/runs/`, `__pycache__/`, `.pytest_cache/`, `.env`, and any ADC/key files (FR-014, research Decision 7)
-- [ ] T015 [US3] Add `Dockerfile`: multi-stage on `ghcr.io/astral-sh/uv:python3.13-bookworm-slim`; stage 1 copies `pyproject.toml`+`uv.lock` and runs `uv sync --frozen --no-dev`; stage 2 copies `src/`+`entrypoint/`, installs the package, creates `state/`/`outputs/`/`entrypoint/runs/`, sets `ENTRYPOINT ["uv","run","python","entrypoint/run.py"]` (FR-009/FR-013/FR-016, research Decision 7)
+- [X] T014 [P] [US3] Add `.dockerignore` excluding `.venv/`, `.git/`, `state/`, `outputs/`, `entrypoint/runs/`, `__pycache__/`, `.pytest_cache/`, `.env`, and any ADC/key files (FR-014, research Decision 7)
+- [X] T015 [US3] Add `Dockerfile`: multi-stage on `ghcr.io/astral-sh/uv:python3.13-bookworm-slim`; stage 1 copies `pyproject.toml`+`uv.lock` and runs `uv sync --frozen --no-dev`; stage 2 copies `src/`+`entrypoint/`, installs the package, creates `state/`/`outputs/`/`entrypoint/runs/`, sets `ENTRYPOINT ["uv","run","python","entrypoint/run.py"]` (FR-009/FR-013/FR-016, research Decision 7)
 - [ ] T016 [US3] Build (`docker build -t ds-agent-loop .`) and run per `quickstart.md` with ADC mounted and `entrypoint/runs` volume-mounted; confirm results persist after exit (FR-011/FR-015, SC-007), the no-credentials run fails fast (FR-009), and image inspection shows no secrets/local artifacts (FR-014, SC-008)
 
 **Checkpoint**: Container build-and-run validated end-to-end.
@@ -96,8 +96,8 @@ description: "Task list for 002-live-tests-containerize"
 
 ## Phase 6: Polish & Cross-Cutting Concerns
 
-- [ ] T017 [P] Update `README.md`: replace OpenAI-compatible setup with Vertex/Gemini + ADK config, the live-verification steps, and the container build/run instructions (FR-017, SC-009)
-- [ ] T018 [P] Write an HTML progress snapshot to `notes/` capturing the re-platform + containerization status (Constitution Principle VII)
+- [X] T017 [P] Update `README.md`: replace OpenAI-compatible setup with Vertex/Gemini + ADK config, the live-verification steps, and the container build/run instructions (FR-017, SC-009)
+- [X] T018 [P] Write an HTML progress snapshot to `notes/` capturing the re-platform + containerization status (Constitution Principle VII)
 - [ ] T019 Run the `quickstart.md` flow top-to-bottom as a final validation pass (offline tests → live verify → container)
 
 ---

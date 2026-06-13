@@ -96,14 +96,19 @@ class Settings(BaseSettings):
     """Single source of truth for runtime config; loaded from ``.env``/environment.
 
     CLI flags override these at call time (see ``main.py``). Field names map to
-    upper-case environment variables (e.g. ``llm_api_key`` -> ``LLM_API_KEY``).
+    upper-case environment variables (e.g. ``gemini_model`` -> ``GEMINI_MODEL``).
+
+    The LLM backend is Google Gemini on Vertex AI via ``google.genai`` + a minimal ADK
+    agent. Authentication is Application Default Credentials (ADC), discovered from the
+    environment — it is intentionally NOT a settings field and is never persisted here.
     """
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
-    llm_api_key: str = ""
-    llm_model: str = "gpt-4o-mini"
-    llm_base_url: str | None = None
+    google_cloud_project: str = "research-se-gen-ai"
+    google_cloud_location: str = "global"
+    gemini_model: str = "gemini-3.5-flash"
+    use_vertexai: bool = True
 
     n_iterations: int = 10
     patience: int = 3
