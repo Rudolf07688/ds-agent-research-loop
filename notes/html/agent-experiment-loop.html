@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent / Experiment Loop — High-Level View</title>
+<style>
+  :root {
+    --ink: #1c2230; --muted: #5b6577; --line: #cfd6e4;
+    --bg: #f7f9fc; --card: #ffffff;
+    --agent: #2b6cb0; --agent-bg: #e8f1fb;
+    --exec: #2f855a; --exec-bg: #e6f4ec;
+    --mem: #b7791f; --mem-bg: #fdf6e3;
+    --store: #6b46c1; --store-bg: #f0ebfa;
+  }
+  * { box-sizing: border-box; }
+  body { font: 15px/1.55 -apple-system, Segoe UI, Roboto, sans-serif;
+    margin: 0; color: var(--ink); background: var(--bg); padding: 2rem 1rem; }
+  .wrap { max-width: 1040px; margin: 0 auto; }
+  h1 { font-size: 1.5rem; margin: 0 0 .25rem; }
+  .sub { color: var(--muted); margin: 0 0 1.6rem; }
+  .sub code { background: #eef1f7; padding: .1rem .35rem; border-radius: 4px; font-size: .85em; }
+
+  /* the loop track */
+  .loop { position: relative; background: var(--card); border: 1px solid var(--line);
+    border-radius: 14px; padding: 1.5rem 1.5rem 1.25rem; box-shadow: 0 1px 3px rgba(20,30,60,.05); }
+  .loop h2 { font-size: .8rem; letter-spacing: .08em; text-transform: uppercase;
+    color: var(--muted); margin: 0 0 1.1rem; font-weight: 700; }
+
+  .steps { display: grid; grid-template-columns: repeat(5, 1fr); gap: .55rem; align-items: stretch; }
+  .step { border-radius: 10px; padding: .7rem .75rem; border: 1px solid var(--line);
+    background: var(--card); position: relative; }
+  .step .n { font-size: .7rem; font-weight: 700; color: var(--muted); }
+  .step .t { font-weight: 650; margin: .15rem 0 .25rem; font-size: .95rem; }
+  .step .d { font-size: .8rem; color: var(--muted); line-height: 1.35; }
+  .step.agent { border-color: var(--agent); background: var(--agent-bg); }
+  .step.agent .t { color: var(--agent); }
+  .step.exec { border-color: var(--exec); background: var(--exec-bg); }
+  .step.exec .t { color: var(--exec); }
+  .step.store { border-color: var(--store); background: var(--store-bg); }
+  .step.store .t { color: var(--store); }
+
+  /* arrows between steps */
+  .step:not(:last-child)::after { content: "→"; position: absolute; right: -.46rem; top: 50%;
+    transform: translateY(-50%); color: var(--line); font-size: 1.1rem; z-index: 2; font-weight: 700; }
+
+  .return { display: flex; align-items: center; gap: .5rem; margin-top: 1rem;
+    color: var(--muted); font-size: .82rem; }
+  .return .bar { flex: 1; height: 0; border-top: 2px dashed var(--line); }
+  .return b { color: var(--ink); font-weight: 650; }
+
+  /* memory panel */
+  .mem-panel { margin-top: 1.4rem; background: var(--card); border: 1px solid var(--line);
+    border-radius: 14px; padding: 1.4rem 1.5rem; box-shadow: 0 1px 3px rgba(20,30,60,.05); }
+  .mem-panel h2 { font-size: .8rem; letter-spacing: .08em; text-transform: uppercase;
+    color: var(--muted); margin: 0 0 .35rem; font-weight: 700; }
+  .mem-panel .lead { font-size: .85rem; color: var(--muted); margin: 0 0 1.1rem; }
+  .mem-panel .lead b { color: var(--mem); }
+  .conds { display: grid; grid-template-columns: repeat(3, 1fr); gap: .8rem; }
+  .cond { border: 1px solid var(--line); border-radius: 10px; padding: .85rem .95rem; background: var(--bg); }
+  .cond .tag { display: inline-block; font-size: .7rem; font-weight: 700; padding: .12rem .45rem;
+    border-radius: 999px; margin-bottom: .4rem; }
+  .cond.a .tag { background: #e8f1fb; color: var(--agent); }
+  .cond.b .tag { background: #fdeaea; color: #c53030; }
+  .cond.c .tag { background: var(--mem-bg); color: var(--mem); }
+  .cond .name { font-weight: 650; font-size: .92rem; margin-bottom: .25rem; }
+  .cond .desc { font-size: .8rem; color: var(--muted); line-height: 1.4; }
+
+  .compaction { margin-top: 1.1rem; border: 1px dashed var(--mem); background: var(--mem-bg);
+    border-radius: 10px; padding: .8rem 1rem; font-size: .83rem; color: #6b5310; }
+  .compaction b { color: var(--mem); }
+
+  .legend { display: flex; flex-wrap: wrap; gap: 1rem; margin-top: 1.3rem; font-size: .8rem; color: var(--muted); }
+  .legend span { display: inline-flex; align-items: center; gap: .35rem; }
+  .legend i { width: .8rem; height: .8rem; border-radius: 3px; display: inline-block; border: 1px solid var(--line); }
+  .footnote { margin-top: 1.4rem; font-size: .78rem; color: var(--muted); }
+  .footnote code { background: #eef1f7; padding: .1rem .3rem; border-radius: 4px; }
+
+  @media (max-width: 760px) {
+    .steps, .conds { grid-template-columns: 1fr; }
+    .step:not(:last-child)::after { content: "↓"; right: 50%; top: auto; bottom: -.7rem; transform: translateX(50%); }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Agent / Experiment Loop</h1>
+  <p class="sub">High-level view of the LLM data-scientist loop and the
+    <code>003</code> memory-compaction ablation (Conditions A / B / C).</p>
+
+  <!-- ITERATION LOOP -->
+  <section class="loop">
+    <h2>One experiment iteration (repeat for N iterations, per dataset × condition × seed)</h2>
+    <div class="steps">
+      <div class="step exec">
+        <div class="n">STEP 1</div>
+        <div class="t">Build context</div>
+        <div class="d">Dataset summary, current best run, allowed actions + <b>memory per A/B/C</b>.</div>
+      </div>
+      <div class="step agent">
+        <div class="n">STEP 2</div>
+        <div class="t">LLM proposes</div>
+        <div class="d">Structured JSON: action, model family, hyperparameters, rationale.</div>
+      </div>
+      <div class="step exec">
+        <div class="n">STEP 3</div>
+        <div class="t">Validate &amp; train</div>
+        <div class="d">Check allowlist + params, run sklearn model, CV score (RMSE/R²/MAE).</div>
+      </div>
+      <div class="step exec">
+        <div class="n">STEP 4</div>
+        <div class="t">Score vs incumbent</div>
+        <div class="d">Accept the run if the primary metric improves; update best run.</div>
+      </div>
+      <div class="step store">
+        <div class="n">STEP 5</div>
+        <div class="t">Log run</div>
+        <div class="d">Append prompt, visible memory IDs, tokens, action, metrics to history.</div>
+      </div>
+    </div>
+    <div class="return">
+      <span>↺</span>
+      <div class="bar"></div>
+      <span>Logged history &amp; updated best run feed <b>Step 1</b> of the next iteration</span>
+    </div>
+  </section>
+
+  <!-- MEMORY ABLATION -->
+  <section class="mem-panel">
+    <h2>The manipulated variable — memory shown to the agent at Step 1</h2>
+    <p class="lead">Everything else is frozen (same LLM, prompt, model registry, metric,
+      dataset, seeds, budget). Only <b>what memory the agent sees</b> changes between conditions.</p>
+    <div class="conds">
+      <div class="cond a">
+        <span class="tag">CONDITION A</span>
+        <div class="name">Recent-only</div>
+        <div class="desc">Last <code>k</code> raw experiment records only. Short working-memory baseline.</div>
+      </div>
+      <div class="cond b">
+        <span class="tag">CONDITION B</span>
+        <div class="name">All-raw</div>
+        <div class="desc">Every prior raw record, appended forever. Tests context-overload harm.</div>
+      </div>
+      <div class="cond c">
+        <span class="tag">CONDITION C</span>
+        <div class="name">Compacted + recent</div>
+        <div class="desc">Latest structured compaction artifact + last <code>k</code> raw records.</div>
+      </div>
+    </div>
+    <div class="compaction">
+      <b>Compaction trigger (Condition C):</b> every <code>m</code> iterations, the LLM compactor reads
+      past runs and emits a structured artifact — confirmed findings, failed/promising directions,
+      best-known configs, open questions, next-step recommendation. It never sees future outcomes
+      (no leakage) and is reused unchanged until the next compaction point.
+    </div>
+  </section>
+
+  <div class="legend">
+    <span><i style="background:var(--agent-bg);border-color:var(--agent)"></i> LLM agent step</span>
+    <span><i style="background:var(--exec-bg);border-color:var(--exec)"></i> Python execution</span>
+    <span><i style="background:var(--store-bg);border-color:var(--store)"></i> Persistent state / history</span>
+    <span><i style="background:var(--mem-bg);border-color:var(--mem)"></i> Memory ablation factor</span>
+  </div>
+
+  <p class="footnote">
+    Sources: <code>notes/research/experiments/llm-autods-toy-spec.md</code> (the base loop) and
+    <code>notes/research/experiments/ablation-memory-compaction-experiment-protocol.md</code>
+    (the A/B/C protocol). Primary outcome: best test-set score under a fixed experiment budget;
+    key comparisons A↔B (overload), B↔C (compaction benefit), A↔C (compaction vs recency).
+  </p>
+</div>
+</body>
+</html>
