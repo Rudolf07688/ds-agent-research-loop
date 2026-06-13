@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "NextStepDecision",
+  "description": "Structured output for the LLM next-step call. The LLM reasons over recorded metrics and proposes exactly one constrained action. Python validates this before use and never executes LLM-supplied code.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["action", "model_name", "hyperparameters", "reason", "notes"],
+  "properties": {
+    "action": {
+      "type": "string",
+      "description": "The single next action to take.",
+      "enum": [
+        "keep_model",
+        "tune_hyperparameters",
+        "switch_model",
+        "expand_dataset",
+        "stop"
+      ]
+    },
+    "model_name": {
+      "type": "string",
+      "description": "Proposed model; MUST be on the Python-side allowlist. May be empty when action is expand_dataset or stop."
+    },
+    "hyperparameters": {
+      "type": "object",
+      "description": "Proposed hyperparameter config (JSON only). Validated by Python before any training.",
+      "additionalProperties": true
+    },
+    "reason": {
+      "type": "string",
+      "description": "Short rationale for the chosen action."
+    },
+    "notes": {
+      "type": "array",
+      "description": "Optional free-form notes.",
+      "items": { "type": "string" }
+    }
+  }
+}

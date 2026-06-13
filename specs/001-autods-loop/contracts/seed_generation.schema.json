@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SeedGeneration",
+  "description": "Structured output for the LLM seed-generation call. The LLM returns a small realistic sample plus a compact reusable data spec that Python uses for cheap local expansion. No free-form text is parsed.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["seed_rows", "data_spec"],
+  "properties": {
+    "seed_rows": {
+      "type": "array",
+      "description": "Small sample of realistic delivery records.",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "item_count",
+          "distance_km",
+          "traffic_level",
+          "is_raining",
+          "hour_of_day",
+          "delivery_time_minutes"
+        ],
+        "properties": {
+          "item_count": { "type": "integer", "minimum": 1 },
+          "distance_km": { "type": "number", "minimum": 0 },
+          "traffic_level": { "type": "string" },
+          "is_raining": { "type": "boolean" },
+          "hour_of_day": { "type": "integer", "minimum": 0, "maximum": 23 },
+          "delivery_time_minutes": { "type": "number", "minimum": 0 }
+        }
+      }
+    },
+    "data_spec": {
+      "type": "object",
+      "description": "Reusable, immutable-after-save generation spec that anchors all local expansion.",
+      "additionalProperties": false,
+      "required": ["features", "target", "rules", "categories", "noise_level"],
+      "properties": {
+        "features": {
+          "type": "array",
+          "items": { "type": "string" },
+          "minItems": 1
+        },
+        "target": {
+          "type": "string",
+          "const": "delivery_time_minutes"
+        },
+        "rules": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "categories": {
+          "type": "object",
+          "description": "Map of feature name to its allowed category values.",
+          "additionalProperties": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        },
+        "noise_level": {
+          "type": "number",
+          "minimum": 0
+        }
+      }
+    }
+  }
+}
