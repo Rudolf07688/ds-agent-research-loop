@@ -39,7 +39,8 @@ def pg_store():
             conn.execute(text("SELECT 1"))
     except Exception as exc:  # no DB reachable -> skip, keep the suite hermetic
         pytest.skip(f"Postgres not available ({exc}); skipping integration test.")
-    store = S.Store(engine)
+    # create=True builds tables directly — permitted for ephemeral/test schemas (Principle IV).
+    store = S.Store(engine, create=True)
     _cleanup(engine, _TEST_CELL)
     try:
         yield store

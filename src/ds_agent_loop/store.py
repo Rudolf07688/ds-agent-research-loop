@@ -68,6 +68,26 @@ def make_engine(database_url: str) -> Engine:
     return create_engine(normalize_url(database_url), future=True)
 
 
+def upgrade_to_head(database_url: str | None = None) -> None:
+    """Apply Alembic migrations up to ``head`` (Principle IV).
+
+    The schema is owned by the migrations under ``alembic/`` — this is the sanctioned way
+    to create/evolve it (no operational ``create_all``). Called at app/container startup so a
+    fresh database reaches the current schema deterministically. ``alembic.ini`` and the
+    ``alembic/`` directory are resolved relative to the repository root.
+    """
+
+    from alembic import command
+    from alembic.config import Config
+
+    root = Path(__file__).resolve().parents[2]
+    cfg = Config(str(root / "alembic.ini"))
+    cfg.set_main_option("script_location", str(root / "alembic"))
+    if database_url:
+        cfg.set_main_option("sqlalchemy.url", normalize_url(database_url))
+    command.upgrade(cfg, "head")
+
+
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -171,7 +191,10 @@ run_logs = Table(
 class Store:
     """Postgres-backed store. Idempotent upserts keyed on natural keys."""
 
-    def __init__(self, engine: Engine, *, create: bool = True) -> None:
+    def __init__(self, engine: Engine, *, create: bool = False) -> None:
+        # The schema is owned by Alembic migrations (Principle IV); the operational path does
+        # NOT create tables. ``create=True`` builds them directly and is permitted ONLY for
+        # ephemeral/test schemas (it is not used by the app or sweep).
         self.engine = engine
         if create:
             metadata.create_all(engine)

@@ -54,6 +54,10 @@ async def _stub_compactor(settings, *, source_records, descriptor):
 
 def main() -> None:
     config = load_config()
+    # Apply DB migrations at container/app startup (Principle IV) — a fresh Postgres reaches
+    # the current schema deterministically before any cell runs.
+    print("Applying database migrations (alembic upgrade head)...")
+    store_mod.upgrade_to_head(config.database_url)
     engine = store_mod.make_engine(config.database_url)
     store = store_mod.Store(engine)
 

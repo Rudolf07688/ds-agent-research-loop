@@ -31,6 +31,10 @@ COPY --from=deps /app/.venv /app/.venv
 COPY pyproject.toml uv.lock README.md ./
 COPY src/ ./src/
 COPY entrypoint/ ./entrypoint/
+# Alembic config + migrations: the schema is applied via `alembic upgrade head` at startup
+# (constitution Principle IV), so these MUST be present in the image.
+COPY alembic.ini ./
+COPY alembic/ ./alembic/
 RUN uv sync --frozen --no-dev
 
 # Bake non-secret defaults from a local `.env` if one is present in the build context.

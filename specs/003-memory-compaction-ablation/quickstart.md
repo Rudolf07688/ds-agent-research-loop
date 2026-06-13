@@ -8,10 +8,16 @@ All commands run via `uv` (Principle VI). A full sweep runs in the container wit
 ## 0. Prerequisites
 
 ```bash
-uv sync                         # resolves new deps: sqlalchemy, psycopg[binary], scipy, matplotlib
+uv sync                         # resolves new deps: sqlalchemy, psycopg[binary], alembic, scipy, matplotlib
 gcloud auth application-default login   # ADC for Vertex/Gemini
 cp .env.example .env            # set DATABASE_URL, benchmark/regime/k/m/seeds (sane defaults baked in)
 ```
+
+The Postgres schema is owned by **Alembic** migrations (`alembic/`, constitution Principle IV). The
+single-cell runner, the sweep, and the container entrypoint all run `alembic upgrade head`
+automatically at startup, so a fresh database is migrated before any cell runs — no manual step.
+To apply migrations by hand: `uv run alembic upgrade head` (and `uv run alembic revision
+--autogenerate -m "..."` when you change the schema in `store.py`).
 
 ## 1. Run a single cell (US1 — the irreducible slice)
 

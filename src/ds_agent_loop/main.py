@@ -502,6 +502,7 @@ async def _run_single_cell(args: argparse.Namespace, settings: Settings) -> Expe
     generates Directional Research Memory at its cadence.
     """
 
+    store_mod.upgrade_to_head(settings.database_url)  # schema owned by Alembic (Principle IV)
     engine = store_mod.make_engine(settings.database_url)
     store = store_mod.Store(engine)
     descriptor = benchmark.get_descriptor(args.dataset)

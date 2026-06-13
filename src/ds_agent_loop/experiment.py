@@ -136,6 +136,7 @@ def main() -> None:
     settings = Settings()
     args = _parse_args(settings)
     STATE_DIR.mkdir(parents=True, exist_ok=True)
+    store_mod.upgrade_to_head(settings.database_url)  # schema owned by Alembic (Principle IV)
     engine = store_mod.make_engine(settings.database_url)
     store = store_mod.Store(engine)
     cells = asyncio.run(

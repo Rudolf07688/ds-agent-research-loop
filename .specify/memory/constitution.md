@@ -76,9 +76,10 @@ Reviewed for v5.2.0 (Alembic + reference doc):
   ✅ .specify/templates/{plan,spec,tasks}-template.md (generic, constitution-driven gates — no change;
      future plans evaluate the Alembic constraint against v5.2.0)
   ✅ notes/research/technical-guideline-high-level.md (registered as a NON-binding reference doc)
-  ⚠ src/ds_agent_loop/store.py (currently builds tables via SQLAlchemy `metadata.create_all`; a
-     follow-up MUST introduce an Alembic migration environment and restrict `create_all` to
-     ephemeral/test schemas — see Principle IV. Not changed by this amendment.)
+  ✅ src/ds_agent_loop/store.py + alembic/ (RESOLVED: an Alembic environment + baseline migration
+     0001 now own the schema; `Store` no longer creates tables in the operational path
+     (`create=False`), `create_all` is restricted to ephemeral/test use, and `alembic upgrade head`
+     runs at app/container startup — Principle IV satisfied.)
 
 Deferred TODOs:
   - The multi-dataset benchmark suite, the memory-regime abstraction, the Directional Research
