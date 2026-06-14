@@ -309,6 +309,26 @@ def test_operator_backed_compacted_cell_replays_unchanged(tmp_path):
     assert result.ok and result.matched == result.total == cell.last_iteration
 
 
+def test_freshly_recorded_cell_replays_100pct_across_all_regimes(tmp_path):
+    """Regression: a cell recorded with the current builder replays byte-for-byte in EVERY regime.
+
+    Guards the green demo path — `notes/DEMO.md` previously parked `replay` because pre-`sort_keys`
+    cells reported spurious per-iteration mismatches; a freshly-recorded cell must match 100%."""
+    store = S.FakeStore()
+    B.materialize_suite(store, ["diabetes"])
+    descriptor, split, _ = B.load_member(store, "diabetes")
+    for regime in (MemoryRegime.recent_only, MemoryRegime.all_raw, MemoryRegime.compacted_recent):
+        cell = asyncio.run(main.run_cell(
+            descriptor, regime, seed=0, k=3, m=3, iterations=9,
+            store=store, settings=_settings(), state_dir=tmp_path / regime.value, split=split,
+            propose=_propose("RandomForestRegressor"), compactor=_operator_compactor(),
+        ))
+        result = provenance.verify_cell(store, cell.cell_id)
+        assert result.ok and result.matched == result.total == cell.last_iteration, (
+            f"{regime.value}: {result.matched}/{result.total} matched, mismatches={result.mismatches}"
+        )
+
+
 def test_operator_backed_compacted_cell_passes_cross_regime_audit(tmp_path):
     """FR-012/SC-005: an operator-backed compacted cell vs a recent_only cell differs only in memory."""
     store = S.FakeStore()

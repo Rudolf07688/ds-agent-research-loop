@@ -105,6 +105,27 @@ def test_distinct_content_yields_distinct_hash():
     assert a.content_hash != b.content_hash
 
 
+def test_content_hash_is_invariant_to_record_dict_key_order():
+    """Regression: a JSONB round-trip (Postgres does not preserve key order) MUST NOT perturb the
+    view hash, or `provenance.verify_cell` reports spurious per-iteration replay mismatches. Pins
+    the ``sort_keys=True`` rendering in ``_render_raw`` (the only defence against this)."""
+
+    def _rec(metrics: dict, hp: dict) -> ExperimentRecord:
+        return ExperimentRecord(
+            iteration=1, dataset_size=100, model_name="LogisticRegression",
+            hyperparameters=hp, metrics=metrics, rationale="r", timestamp="t",
+            cell_id="c", regime=MemoryRegime.recent_only, seed=0, test_metrics=metrics,
+        )
+
+    # Same data, keys inserted in opposite orders — what a JSONB reload can produce.
+    ordered = [_rec({"accuracy": 0.94, "macro_f1": 0.95}, {"C": 1.0, "max_iter": 200})]
+    scrambled = [_rec({"macro_f1": 0.95, "accuracy": 0.94}, {"max_iter": 200, "C": 1.0})]
+    for regime in (MemoryRegime.recent_only, MemoryRegime.all_raw):
+        a = memory.build_view(regime, ordered, k=5, cell_id="c", iteration=2)
+        b = memory.build_view(regime, scrambled, k=5, cell_id="c", iteration=2)
+        assert a.content_hash == b.content_hash
+
+
 # --- US1 (T010/T011): regime is pure configuration, fail-fast on unknown -----
 
 

@@ -126,12 +126,20 @@ uv run ds-agent-memory compaction 'wine|compacted_recent|s0|k5|m3'
 - **Tighter/looser compaction:** vary `--m` (cadence) and `--k` (memory tail).
 - **Real LLM run:** drop `STUB_LLM=1` (needs `.env` Vertex config).
 
+**5c. Verified replay** — re-derive each decision's memory view from persisted history and assert
+it hashes byte-for-byte to what the agent was shown (no LLM calls). This is the per-decision
+reproducibility proof:
+
+```bash
+uv run ds-agent-memory replay --cell 'wine|recent_only|s0|k5|m3'
+# [ok] wine|recent_only|s0|k5|m3: matched 9/9
+```
+
+Replays the whole sweep at once with `--all`. (Replay is hash-exact only for cells recorded by the
+current builder; cells recorded before the `memory.py` `sort_keys` rendering fix will report
+spurious per-iteration mismatches — regenerate them.)
+
 ## Cell-id cheat sheet
 
 Cells are addressed as `member|regime|s<seed>|k<k>|m<m>` — e.g.
 `wine|compacted_recent|s0|k5|m3`. That's the id you pass to the `ds-agent-memory` audits.
-
-> **Note on `ds-agent-memory replay`:** the `replay` verifier currently reports per-iteration
-> hash mismatches against live-recorded cells (it re-derives the memory-view hash and only
-> iteration 1 matches). It is intentionally left out of the green demo path above; the
-> cross-regime and compaction audits are the reproducibility checks to show.
